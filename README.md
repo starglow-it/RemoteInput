@@ -23,12 +23,13 @@ Target IDs are assigned sequentially by the relay. Each target generates its own
 
 ## Development
 
-Requires Python 3.12+ on developer machines only. Install into a project virtual environment so RemoteInput's pinned dependencies do not replace packages used by other tools. Run these commands from the repository root.
+Requires Python 3.12+ on developer machines only. Check `python --version` on Windows or `python3 --version` on macOS/Linux before creating the environment below. If it is older than 3.12, install a supported Python first. An existing virtual environment keeps its original interpreter; see [Python installation recovery](docs/DEPENDENCIES.md#macos-editable-install-error) for the macOS steps. Install into a project virtual environment so RemoteInput's pinned dependencies do not replace packages used by other tools. Run these commands from the repository root.
 
 Windows (Command Prompt or PowerShell):
 
 ```text
 python -m venv .venv
+.venv\Scripts\python.exe -m pip install --upgrade pip
 .venv\Scripts\python.exe -m pip install -e ".[test,build]"
 .venv\Scripts\python.exe -m pip check
 .venv\Scripts\python.exe -m pytest -q
@@ -39,6 +40,7 @@ macOS/Linux:
 
 ```sh
 python3 -m venv .venv
+.venv/bin/python -m pip install --upgrade pip
 .venv/bin/python -m pip install -e ".[test,build]"
 .venv/bin/python -m pip check
 .venv/bin/python -m pytest -q
