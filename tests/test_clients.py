@@ -38,7 +38,7 @@ class FakeConsole:
         self.commands = asyncio.Queue()
 
 
-@pytest.mark.parametrize("propagation_delay", [0, .225, .375])
+@pytest.mark.parametrize("propagation_delay", [0, .225, .350])
 async def test_real_client_lifecycle_and_password_change(tmp_path, monkeypatch, capsys, propagation_delay):
     delay_tasks = []
     if propagation_delay:
@@ -92,9 +92,11 @@ async def test_real_client_lifecycle_and_password_change(tmp_path, monkeypatch, 
         client.capture.policy.mouse(Op.BUTTON, 1, 1)
         client.capture.policy.mouse(Op.MOVE, 6, -2)
         await eventually(lambda: target.engine.keys and target.engine.buttons)
-        if propagation_delay == .375:
-            # Sustain a held drag across many token refreshes on a 750 ms RTT
-            # route, so a near-boundary token eventually accompanies input.
+        if propagation_delay == .350:
+            # A 700 ms RTT plus the 200 ms challenge interval exceeds the old
+            # input cutoff, with 150 ms headroom for real scheduler jitter on
+            # the separate 850 ms heartbeat check. Exact boundaries use the
+            # deterministic clock in test_core.py.
             deadline = asyncio.get_running_loop().time() + 6
             while asyncio.get_running_loop().time() < deadline:
                 assert client.epoch and target.engine.epoch

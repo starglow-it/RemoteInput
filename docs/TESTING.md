@@ -13,10 +13,12 @@ The automated suite covers:
 - Key repeats/holds, dragging, local reserved hotkeys, permission denial and repeated permission checks through test doubles.
 - Reset, disconnect/reconnect, duplicate sequences, expired nonces, and releasing holds with both WSS sockets still connected while application heartbeats stop.
 - Full real Controller/Target lifecycle using fake platform backends, including password rotation and forgetting the rejected old password.
-- The same verified WSS lifecycle with 225 ms and 375 ms simulated propagation in each direction (450 ms and 750 ms added full-path RTT), including capture failure, held-input cleanup and explicit reactivation. The 750 ms case sustains a held drag for six seconds across many token refreshes; the earlier shared token cutoff reproduced `Paused: stale input`. This is not a measurement on the user's network.
+- The same verified WSS lifecycle with 225 ms and 350 ms simulated propagation in each direction (450 ms and 700 ms added full-path RTT), including capture failure, held-input cleanup and explicit reactivation. The 700 ms case sustains a held drag for six seconds across many token refreshes; the earlier shared token cutoff reproduced `Paused: stale input`. Exact freshness boundaries use a deterministic clock. These are not measurements on the user's network.
 - Independent input-token/heartbeat deadlines: a still-fresh heartbeat permits input bearing the previous challenge, genuinely expired input resets/releases, an old token cannot refresh the heartbeat deadline, and old epochs/duplicates cannot pause the current activation.
 - Windows activation dispatch, a concurrent physical callback during local modifier release, busy hook health, cancellation of queued activation, cursor restoration, activation failure/retry and network-loop watchdog behavior through Win32 API doubles on every test OS. These tests do not install real hooks or send native input.
 - Native DPAPI encryption, persistence and deletion **on Windows runners only**; skipped on Linux/macOS.
+
+The initial 750 ms wall-clock lifecycle passed on Linux, Windows and Intel Mac. An Apple Silicon CI runner delayed one heartbeat to 856 ms, correctly triggering the separate 850 ms safety cutoff. The current 700 ms case leaves more scheduler headroom and still reproduces stale-input rejection with the old input cutoff; the exact token-boundary tests retain a deterministic 750 ms heartbeat / 950 ms input scenario. Production safety deadlines were not changed to accommodate the runner.
 
 Native input is never sent by automated tests. The fake sink exists only under `tests/`; production launchers instantiate only the native OS backend.
 
