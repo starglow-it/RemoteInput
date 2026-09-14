@@ -40,13 +40,29 @@ class FakeConsole:
 
 @pytest.mark.parametrize("propagation_delay", [0, .225])
 async def test_real_client_lifecycle_and_password_change(tmp_path, monkeypatch, capsys, propagation_delay):
+    delay_tasks = []
     if propagation_delay:
         put = Outbox.put
+        channels = {}
+
+        async def propagate(outbox, channel):
+            while True:
+                raw, due = await channel.get()
+                await asyncio.sleep(max(0, due - outbox.loop.time()))
+                put(outbox, raw)
+
+        def schedule(outbox, raw):
+            if outbox not in channels:
+                channels[outbox] = asyncio.Queue(256)
+                delay_tasks.append(asyncio.create_task(propagate(outbox, channels[outbox])))
+            channels[outbox].put_nowait((raw, outbox.loop.time() + propagation_delay))
 
         def delayed_put(outbox, raw):
-            # Independent propagation delay, not a serial per-message sleep or
-            # a production-queue backlog: 225 ms each way, 450 ms full path RTT.
-            outbox.loop.call_soon_threadsafe(outbox.loop.call_later, propagation_delay, put, outbox, raw)
+            # Due times model propagation without charging another delay for
+            # every packet. FIFO also preserves WSS ordering when coarse Windows
+            # clock ticks give several packets identical deadlines (independent
+            # call_later timers explicitly don't guarantee their relative order).
+            outbox.loop.call_soon_threadsafe(schedule, outbox, raw)
 
         monkeypatch.setattr(Outbox, "put", delayed_put)
     server_ssl, client_ssl = tls_contexts(tmp_path)
@@ -98,5 +114,8 @@ async def test_real_client_lifecycle_and_password_change(tmp_path, monkeypatch, 
         for task in tasks:
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
+        for task in delay_tasks:
+            task.cancel()
+        await asyncio.gather(*delay_tasks, return_exceptions=True)
         listener.close()
         await listener.wait_closed()
