@@ -1,0 +1,177 @@
+{
+  "environment": {
+    "platform": "Linux-6.18.44-x86_64-with-glibc2.39",
+    "python": "3.12.14",
+    "transport": "Certificate-verified WSS over loopback; both clients and relay on one host",
+    "network": "Loopback plus separate 40 ms RTT simulation (20 ms per endpoint receive path). No WAN, packet loss, jitter, bandwidth cap, Wi-Fi or screen feed measured.",
+    "input": "Dedicated target worker with fake input sink; no native OS injection measured",
+    "baseline": "Reference policy adds an 8 ms flush timer; no earlier production build is implied",
+    "ack_sampling": "Every benchmark input; production acknowledges each 32nd input sequence and probes"
+  },
+  "trials": [
+    {
+      "policy": "reference_8ms_flush",
+      "endpoint_receive_delay_ms": 0,
+      "emulated_extra_round_trip_ms": 0,
+      "captured_input_events": 1000,
+      "transmitted_input_frames": 600,
+      "target_acknowledgments": 600,
+      "elapsed_s": 1.0869061750017863,
+      "timings": {
+        "controller_send_queue": {
+          "samples": 607,
+          "median_ms": 0.1308980026806239,
+          "p95_ms": 0.24687300174264237
+        },
+        "controller_queue": {
+          "samples": 600,
+          "median_ms": 4.161494001891697,
+          "p95_ms": 8.956988000136334
+        },
+        "controller_target_controller_rtt": {
+          "samples": 600,
+          "median_ms": 0.986392,
+          "p95_ms": 1.49416
+        },
+        "capture_to_ack": {
+          "samples": 600,
+          "median_ms": 4.958509000218309,
+          "p95_ms": 9.975078000899197
+        },
+        "target_queue": {
+          "samples": 600,
+          "median_ms": 0.072,
+          "p95_ms": 0.141
+        },
+        "fake_sink_processing": {
+          "samples": 600,
+          "median_ms": 0.0,
+          "p95_ms": 0.002
+        }
+      }
+    },
+    {
+      "policy": "immediate_flush",
+      "endpoint_receive_delay_ms": 0,
+      "emulated_extra_round_trip_ms": 0,
+      "captured_input_events": 1000,
+      "transmitted_input_frames": 600,
+      "target_acknowledgments": 600,
+      "elapsed_s": 1.1587576040001295,
+      "timings": {
+        "controller_send_queue": {
+          "samples": 607,
+          "median_ms": 0.07271000140463002,
+          "p95_ms": 0.12202400102978572
+        },
+        "controller_queue": {
+          "samples": 600,
+          "median_ms": 0.028853999538114294,
+          "p95_ms": 0.04882400025962852
+        },
+        "controller_target_controller_rtt": {
+          "samples": 600,
+          "median_ms": 0.611063,
+          "p95_ms": 0.890376
+        },
+        "capture_to_ack": {
+          "samples": 600,
+          "median_ms": 0.6418999969572555,
+          "p95_ms": 0.9200700001517795
+        },
+        "target_queue": {
+          "samples": 600,
+          "median_ms": 0.048,
+          "p95_ms": 0.076
+        },
+        "fake_sink_processing": {
+          "samples": 600,
+          "median_ms": 0.0,
+          "p95_ms": 0.002
+        }
+      }
+    },
+    {
+      "policy": "reference_8ms_flush",
+      "endpoint_receive_delay_ms": 20.0,
+      "emulated_extra_round_trip_ms": 40.0,
+      "captured_input_events": 1000,
+      "transmitted_input_frames": 600,
+      "target_acknowledgments": 600,
+      "elapsed_s": 1.1727932419998979,
+      "timings": {
+        "controller_send_queue": {
+          "samples": 608,
+          "median_ms": 0.09184900045511313,
+          "p95_ms": 0.16351800150005147
+        },
+        "controller_queue": {
+          "samples": 600,
+          "median_ms": 4.134938000788679,
+          "p95_ms": 7.7439609995053615
+        },
+        "controller_target_controller_rtt": {
+          "samples": 600,
+          "median_ms": 41.703957,
+          "p95_ms": 42.395768
+        },
+        "capture_to_ack": {
+          "samples": 600,
+          "median_ms": 45.73405700058218,
+          "p95_ms": 49.70215800143262
+        },
+        "target_queue": {
+          "samples": 600,
+          "median_ms": 0.066,
+          "p95_ms": 0.1
+        },
+        "fake_sink_processing": {
+          "samples": 600,
+          "median_ms": 0.0,
+          "p95_ms": 0.002
+        }
+      }
+    },
+    {
+      "policy": "immediate_flush",
+      "endpoint_receive_delay_ms": 20.0,
+      "emulated_extra_round_trip_ms": 40.0,
+      "captured_input_events": 1000,
+      "transmitted_input_frames": 600,
+      "target_acknowledgments": 600,
+      "elapsed_s": 1.2141513469978236,
+      "timings": {
+        "controller_send_queue": {
+          "samples": 608,
+          "median_ms": 0.06036099875927903,
+          "p95_ms": 0.09397200119565241
+        },
+        "controller_queue": {
+          "samples": 600,
+          "median_ms": 0.02521799979149364,
+          "p95_ms": 0.04407700180308893
+        },
+        "controller_target_controller_rtt": {
+          "samples": 600,
+          "median_ms": 41.774474,
+          "p95_ms": 42.557918
+        },
+        "capture_to_ack": {
+          "samples": 600,
+          "median_ms": 41.798469000764506,
+          "p95_ms": 42.589596000193254
+        },
+        "target_queue": {
+          "samples": 600,
+          "median_ms": 0.05,
+          "p95_ms": 0.077
+        },
+        "fake_sink_processing": {
+          "samples": 600,
+          "median_ms": 0.0,
+          "p95_ms": 0.002
+        }
+      }
+    }
+  ]
+}

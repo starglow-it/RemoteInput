@@ -1,0 +1,10 @@
+{$RELAY_DOMAIN} {
+    @ws path /ws
+    reverse_proxy @ws relay:8765 {
+        header_up X-Real-IP {remote_host}
+        flush_interval -1
+    }
+    respond /health "RemoteInput relay" 200
+    respond 404
+}
+
