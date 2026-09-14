@@ -2,7 +2,7 @@
 
 Control a Windows or macOS computer's mouse and keyboard from Windows 11. RemoteInput runs in a console and does not capture screens. Use your existing screen feed separately.
 
-**Status:** source implementation with automated protocol, safety, and TLS integration tests. Deploy and verify your relay before distributing configured packages. Packages built without `REMOTEINPUT_RELAY_URL` are explicitly marked **setup-pending** and cannot pair until the developer rebuilds them with the deployed address. Interactive Windows/macOS behavior still needs the checks in [TESTING.md](docs/TESTING.md).
+**Configured Windows x64 and macOS packages are available:** [downloads and build results](docs/BUILD-REPORT.md). They bundle Python, dependencies, and the verified Ubuntu relay address. Extract and use **Start Target** / **Start Controller**. The relay connection has been verified from the owner's Windows PC; interactive Windows/macOS input still needs the checks in [TESTING.md](docs/TESTING.md).
 
 - [Everyday setup](docs/SETUP.md)
 - [Native executable downloads and verified build results](docs/BUILD-REPORT.md)

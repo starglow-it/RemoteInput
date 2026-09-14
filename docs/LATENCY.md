@@ -21,6 +21,16 @@ Removing the artificial flush timer reduced initial local queue delay in this ru
 
 Target queue median/p95 was 0.07/0.14 ms before and 0.05/0.08 ms after on loopback. With the 40 ms receive-delay simulation it was 0.07/0.10 ms before and 0.05/0.08 ms after. Fake-sink processing rounded to 0.000/0.002 ms in each trial; **those values do not measure Windows SendInput or macOS CGEventPost**. Detailed controller sender-queue measurements are included in the raw JSON.
 
+## First live relay check
+
+On 14 September 2026, the owner reported a successful Windows probe to `wss://172-86-119-204.sslip.io/ws`, with certificate verification, WebSocket upgrade, and the Python relay's diagnostic reply all succeeding.
+
+| Measurement | Samples | Median | p95 |
+|---|---:|---:|---:|
+| That Windows PC to the deployed Ubuntu relay and back | 10 | 225.67 ms | 226.23 ms |
+
+These are user-reported measurements over the actual client-to-relay connection. The PC's location, wired/Wi-Fi connection, and traffic conditions were not supplied. The target-to-relay leg, native injection time, full controller-to-target-to-controller RTT, and separate screen feed have not yet been measured on this pair. This small live sample is separate from the controlled optimization experiment above; the different networks cannot be compared as a before/after software result.
+
 ## Measure the real pair
 
 While the controller is paused, type **M + Enter** after using control for a while. The rolling report contains:
@@ -45,5 +55,4 @@ RemoteInput probe --relay wss://CANDIDATE-HOST/ws --count 100 --output target-ca
 
 Run the first command on the controller and the second on the target. Repeat at the time of day you actually work, and record location, connection type, region and congestion. Compare both link median RTTs added together; use both p95 values to screen for unstable routes. A sum of p95 values is a comparison heuristic, not the measured p95 of the full path. Then validate the best candidates with the live target acknowledgments and actual input.
 
-For a US/China pair, select the candidate with the lowest measured combined path and stable tails, rather than assuming a geographically central host is fastest. **No measurements from either of your PCs are available yet, so no specific region is recommended as the winner.** Avoid a hosting plan that sleeps or suspends persistent websocket sessions. Placement advice must be checked against both actual networks.
-
+For a US/China pair, select the candidate with the lowest measured combined path and stable tails, rather than assuming a geographically central host is fastest. **One PC's live measurement is recorded above; measurements from the other PC and alternative relays are still needed before recommending a winning region.** Avoid a hosting plan that sleeps or suspends persistent websocket sessions. Placement advice must be checked against both actual networks.
