@@ -1,10 +1,13 @@
 import asyncio
 
+import pytest
+
 from remoteinput.capture import CapturePolicy
 from remoteinput.controller import Controller
 from remoteinput.protocol import Op
 from remoteinput.relay import Relay
 from remoteinput.target import Target
+from remoteinput.transport import Outbox
 
 from helpers import FakeInjector, MemoryVault, eventually, tls_contexts
 
@@ -35,7 +38,17 @@ class FakeConsole:
         self.commands = asyncio.Queue()
 
 
-async def test_real_client_lifecycle_and_password_change(tmp_path, monkeypatch):
+@pytest.mark.parametrize("propagation_delay", [0, .225])
+async def test_real_client_lifecycle_and_password_change(tmp_path, monkeypatch, capsys, propagation_delay):
+    if propagation_delay:
+        put = Outbox.put
+
+        def delayed_put(outbox, raw):
+            # Independent propagation delay, not a serial per-message sleep or
+            # a production-queue backlog: 225 ms each way, 450 ms full path RTT.
+            outbox.loop.call_soon_threadsafe(outbox.loop.call_later, propagation_delay, put, outbox, raw)
+
+        monkeypatch.setattr(Outbox, "put", delayed_put)
     server_ssl, client_ssl = tls_contexts(tmp_path)
     relay = Relay(tmp_path / "registry.sqlite3")
     listener = await relay.start(port=0, ssl_context=server_ssl)
@@ -63,8 +76,12 @@ async def test_real_client_lifecycle_and_password_change(tmp_path, monkeypatch):
         client.capture.policy.mouse(Op.BUTTON, 1, 1)
         client.capture.policy.mouse(Op.MOVE, 6, -2)
         await eventually(lambda: target.engine.keys and target.engine.buttons)
-        client.stop_control()
+        client.capture.alive = False
+        await eventually(lambda: not client.capture.policy.active)
         await eventually(lambda: not target.engine.keys and not target.engine.buttons)
+        assert client.connected and target.engine.connected
+        assert "Paused: Windows input capture stopped responding" in capsys.readouterr().out
+        client.capture.alive = True
         client.capture.policy.key(65, False)
         client.capture.policy.mouse(Op.BUTTON, 1, 0)
         client.activate()
@@ -83,4 +100,3 @@ async def test_real_client_lifecycle_and_password_change(tmp_path, monkeypatch):
         await asyncio.gather(*tasks, return_exceptions=True)
         listener.close()
         await listener.wait_closed()
-

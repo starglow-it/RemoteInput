@@ -13,6 +13,7 @@ LRESULT = C.c_ssize_t
 ULONG_PTR = C.c_size_t
 HOOKPROC = C.WINFUNCTYPE(LRESULT, C.c_int, W.WPARAM, W.LPARAM)
 TAG = 0x52494E50
+WM_CAPTURE_STATE = 0x8001
 
 
 class KBD(C.Structure):
@@ -126,6 +127,9 @@ class WindowsCapture:
         self.thread_id = 0
         self.origin = None
         self.anchor = None
+        self.requested_active = False
+        self.state_version = 0
+        self.state_pending = False
         self.thread = threading.Thread(target=self._run, name="windows-input-hooks", daemon=True)
 
     def start(self):
@@ -140,10 +144,45 @@ class WindowsCapture:
         self.last_network_tick = time.monotonic()
 
     def set_active(self, active):
+        # Never call cursor/SendInput APIs from the network thread while holding
+        # the policy lock: those APIs can wait for this process's hook callback.
+        # One posted message applies the latest requested state on the hook thread.
         with self.policy.lock:
-            if active:
+            self.requested_active = active
+            self.state_version += 1
+            if not active:
+                self.policy.pause()  # Restore ordinary local input immediately.
+            if not self.thread_id or not self.thread.is_alive():
+                if active:
+                    raise RuntimeError("Input capture is unavailable.")
+                return
+            if self.state_pending:
+                return
+            self.state_pending = True
+            if not U.PostThreadMessageW(self.thread_id, WM_CAPTURE_STATE, 0, 0):
+                self.state_pending = False
+                self.requested_active = False
+                self.policy.pause()
+                if active:
+                    raise RuntimeError("Could not notify the Windows input thread.")
+
+    def _restore_cursor(self):
+        origin = self.origin
+        self.origin = self.anchor = None
+        if origin:
+            U.SetCursorPos(*origin)
+
+    def _apply_state(self):
+        with self.policy.lock:
+            self.state_pending = False
+            version = self.state_version
+            if self.requested_active:
+                if self.policy.active:
+                    return
                 if not self.healthy() or not self.injector.permitted():
                     raise RuntimeError("Input capture is unavailable.")
+                # A pause followed quickly by activation may share one wakeup.
+                self._restore_cursor()
                 point = W.POINT()
                 if not U.GetCursorPos(C.byref(point)):
                     raise RuntimeError("Could not access the cursor.")
@@ -155,12 +194,23 @@ class WindowsCapture:
                 # Ctrl/Alt may have reached the local app before the activation chord.
                 for key in list(self.policy.keys):
                     self.injector.key(key, False)
-                self.policy.activate()
+                # A reentrant hotkey callback can cancel this activation while
+                # a native API dispatches messages on the same hook thread.
+                if self.requested_active and self.state_version == version:
+                    self.policy.activate()
+                else:
+                    self._restore_cursor()
             else:
                 self.policy.pause()
-                if self.origin:
-                    U.SetCursorPos(*self.origin)
-                self.origin = self.anchor = None
+                self._restore_cursor()
+
+    def _pump_tick(self):
+        # GetMessage can dispatch many sent hook callbacks without returning a
+        # posted message or low-priority WM_TIMER. Those callbacks are progress too.
+        self.last_pump = time.monotonic()
+        if self.policy.active and self.last_pump - self.last_network_tick > .65:
+            self.set_active(False)
+            self.policy.stop("controller network loop stopped responding")
 
     def stop(self):
         self.set_active(False)
@@ -169,6 +219,7 @@ class WindowsCapture:
         self.thread.join(timeout=2)
 
     def _key(self, code, message, address):
+        self._pump_tick()
         if code >= 0:
             data = C.cast(address, C.POINTER(KBD)).contents
             if not data.flags & 0x10:  # Never reflect injected input back to the target.
@@ -184,10 +235,11 @@ class WindowsCapture:
                         return 1
                 except Exception:
                     self.policy.pause()
-                    self.policy.stop()
+                    self.policy.stop("Windows keyboard capture failed")
         return U.CallNextHookEx(None, code, message, address)
 
     def _mouse(self, code, message, address):
+        self._pump_tick()
         if code >= 0:
             data = C.cast(address, C.POINTER(MOUSE)).contents
             if not data.flags & 1:
@@ -214,7 +266,7 @@ class WindowsCapture:
                         return 1
                 except Exception:
                     self.policy.pause()
-                    self.policy.stop()
+                    self.policy.stop("Windows mouse capture failed")
         return U.CallNextHookEx(None, code, message, address)
 
     def _run(self):
@@ -238,10 +290,14 @@ class WindowsCapture:
                 result = U.GetMessageW(C.byref(message), None, 0, 0)
                 if result <= 0:
                     break
-                self.last_pump = time.monotonic()
-                if self.policy.active and self.last_pump - self.last_network_tick > .65:
-                    self.set_active(False)
-                    self.policy.stop()
+                self._pump_tick()
+                if message.message == WM_CAPTURE_STATE:
+                    try:
+                        self._apply_state()
+                    except Exception:
+                        self.set_active(False)
+                        self.policy.stop("Windows could not activate input capture; check the unlocked desktop")
+                    continue
                 U.TranslateMessage(C.byref(message))
                 U.DispatchMessageW(C.byref(message))
         except Exception as error:
@@ -249,8 +305,11 @@ class WindowsCapture:
             self.ready.set()
         finally:
             self.policy.pause()
+            self.requested_active = False
+            self._restore_cursor()
             if timer:
                 U.KillTimer(None, timer)
             for hook in hooks:
                 if hook:
                     U.UnhookWindowsHookEx(hook)
+            self.thread_id = 0

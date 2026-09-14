@@ -267,6 +267,8 @@ def test_control_hotkeys_stay_local_and_ordinary_keys_are_suppressed(hotkey):
     assert policy.key(0xA2, True)
     assert policy.key(0xA4, True)
     assert policy.key(hotkey, True)
+    for _ in range(4):
+        assert policy.key(hotkey, True)  # Holding F9/F10 must not retrigger it.
     assert policy.key(hotkey, False)
     assert len(actions) == 1
     assert events == []

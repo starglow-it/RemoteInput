@@ -38,28 +38,28 @@ class Controller:
         if not self.connected or not self.epoch:
             return
         if not self.queue.put(event.with_fields(epoch=self.epoch)):
-            self.stop_control()
+            self.stop_control("controller input queue overloaded")
 
     def _schedule(self, function):
         self.loop.call_soon_threadsafe(function)
 
     def toggle(self):
         if self.epoch or self.pending_epoch:
-            self.stop_control()
+            self.stop_control("Ctrl+Alt+F9")
         else:
             self._schedule(self.activate)
 
-    def stop_control(self):
+    def stop_control(self, reason="control stopped locally"):
         # Stop local suppression immediately, including calls from the hook thread.
         self.capture.set_active(False)
         self.epoch = self.pending_epoch = 0
         self.queue.clear()
-        self._schedule(self.send_reset)
+        self._schedule(lambda: self.send_reset(reason))
 
-    def send_reset(self):
+    def send_reset(self, reason="activation cancelled"):
         if self.outbox:
             self.outbox.put(self.frame(Event(Op.RESET)).pack())
-        print("Paused" if self.connected else "Disconnected", flush=True)
+        print(f"Paused: {reason}" if self.connected else "Disconnected", flush=True)
 
     def frame(self, event):
         self.seq += 1
@@ -91,7 +91,7 @@ class Controller:
                     # Single outbox preserves order of inputs, heartbeats, probes, and resets.
                     self.outbox.put(self.frame(event).pack())
             except Overload:
-                self.stop_control()
+                self.stop_control("controller input queue exceeded the safety limit")
             await self.ready.wait()
 
     async def reader(self, ws):
@@ -125,7 +125,7 @@ class Controller:
                     print("Controlling", flush=True)
                 elif kind == "paused":
                     if message.get("epoch") in (self.epoch, self.pending_epoch):
-                        self.stop_control()
+                        self.stop_control("target stopped control; see the target console for the reason")
                 else:
                     raise ValueError("Unexpected relay message")
 
@@ -134,9 +134,12 @@ class Controller:
         while True:
             now = time.monotonic()
             self.capture.network_tick()
-            if ((self.epoch and (not self.capture.healthy() or now - self.lease_received > .65))
-                    or (self.pending_epoch and now > self.activate_deadline)):
-                self.stop_control()
+            if self.epoch and not self.capture.healthy():
+                self.stop_control("Windows input capture stopped responding")
+            elif self.epoch and now - self.lease_received > .65:
+                self.stop_control("target updates timed out; check the network and target console")
+            elif self.pending_epoch and now > self.activate_deadline:
+                self.stop_control("target activation timed out")
             if self.lease and now - last_probe >= .5:
                 self.outbox.put(self.frame(Event(Op.PROBE, epoch=self.epoch)).pack())
                 last_probe = now

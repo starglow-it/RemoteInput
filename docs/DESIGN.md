@@ -20,6 +20,8 @@ Queues cap at 256 items and 100 ms of local age. Network buffers and websocket f
 
 The Windows controller suppresses ordinary local input only while active. It anchors the local cursor inside the primary display, derives relative deltas from proposed low-level mouse positions and suppresses those moves; the cursor cannot walk to an edge. Pause restores its original position. This native behavior must be checked on physical mice, touchpads and multi-monitor arrangements. Ctrl/Alt modifier downs are deferred until a nonreserved input so the activation/stop chord stays local. Physical keys held during activation are ignored until released.
 
+Native capture activation and cursor restoration run on the hook thread via one coalesced posted state message. A pause disables suppression immediately and supersedes a queued activation. This avoids holding the policy lock on the network thread across native calls that can dispatch hook callbacks. The health timestamp advances during keyboard/mouse callbacks as well as message-loop returns: [Windows dispatches low-level hooks on their installing thread](https://learn.microsoft.com/en-us/windows/win32/winmsg/lowlevelkeyboardproc), and [GetMessage can dispatch sent messages before returning, with timers at lower priority](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-getmessagew). Both callbacks and timer messages enforce the separate network-loop watchdog.
+
 ## Independent expiry and cleanup
 
 The target issues an unpredictable lease nonce every 200 ms. A nonce expires after 850 ms on the **target's** monotonic clock. The controller must echo a fresh nonce with an application heartbeat; websocket ping/pong traffic is insufficient. Incoming input does not itself refresh the heartbeat deadline. Stale or duplicated sequence numbers and inactive epochs do not inject input.
@@ -41,4 +43,3 @@ Windows `SendInput` is subject to integrity-level restrictions; it cannot contro
 - [Apple event-posting permission check](https://developer.apple.com/documentation/coregraphics/cgpreflightposteventaccess())
 - [websockets asyncio server, compression and buffer settings](https://websockets.readthedocs.io/en/stable/reference/asyncio/server.html)
 - [Caddy reverse proxy and streaming settings](https://caddyserver.com/docs/caddyfile/directives/reverse_proxy)
-

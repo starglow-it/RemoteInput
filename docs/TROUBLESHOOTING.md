@@ -1,4 +1,34 @@
-# Relay connection troubleshooting
+# Connection and input troubleshooting
+
+## Controlling changes immediately to Paused on Windows
+
+Update the Windows controller. Early versions ran cursor positioning and local modifier releases on the network thread while holding the input-policy lock. A physical input callback arriving during that transition could wait for the same lock, stalling activation. A busy hook thread could also be reported as unresponsive because its health timestamp was updated only when `GetMessage` returned, not when it dispatched hook callbacks.
+
+The fix performs native activation/cursor restoration on the hook thread using a coalesced posted message, counts hook callbacks as progress, and prints a specific local pause reason. Pause immediately disables local suppression; queued activation cannot undo a later pause. The existing lease, network-loop and overload safeguards still apply.
+
+While paused, enter **Q** and press Enter to quit the controller. From the Windows source checkout:
+
+```text
+git pull --ff-only
+.venv\Scripts\python.exe -m remoteinput controller --relay wss://172-86-119-204.sslip.io/ws
+```
+
+The editable install uses the updated source directly. The Windows controller update works with the existing target and relay. For packaged installations, use the newest [Windows package](BUILD-REPORT.md).
+
+| Pause message | Meaning and next step |
+|---|---|
+| `Ctrl+Alt+F9` or `control stopped locally` | A local pause/stop was requested. Release the chord before pressing it again. Holding F9/F10 does not repeatedly toggle control. |
+| `Windows input capture stopped responding` | The hook thread is unresponsive. Update/restart the controller and check that the Windows desktop is unlocked. |
+| `controller network loop stopped responding` | Local processing stalled; input suppression was disabled to restore local control. |
+| `Windows could not activate input capture; check the unlocked desktop` | A native desktop/cursor/input operation failed. Return to the normal unlocked desktop and retry. |
+| `target updates timed out; check the network and target console` | Fresh target challenges stopped arriving. Check the target process and connection. |
+| `target activation timed out` | The target did not complete activation within the safety deadline. Check its console and network. |
+| `target stopped control; see the target console for the reason` | Read the target's `Paused: ...` line for permission loss, stale input, unsupported keys, injection failure or overload. |
+| A controller input queue safety message | Processing fell behind; the controller reset instead of replaying a backlog. |
+
+If the issue continues, share the controller's `Paused: ...` line and the target's corresponding status line. Omit the target ID/password display. **M + Enter** while paused shows full controller-to-target-to-controller measurements. The standalone relay probe measures only that PC's relay link and cannot diagnose native input capture.
+
+Regression tests use simulated Win32 calls and real verified WSS connections with fake input backends. A delayed-path test adds 225 ms in each direction (450 ms round trip); this is a simulation, not a measurement of the owner's Mac or Windows desktop. Physical desktop validation remains necessary.
 
 `probe` checks the network connection. It does not request or require mouse, keyboard, Accessibility, or administrator permissions. Older builds print "Check connectivity and OS permissions" for many unrelated errors; this message alone cannot identify the cause.
 

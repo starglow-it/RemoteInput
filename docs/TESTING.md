@@ -13,6 +13,8 @@ The automated suite covers:
 - Key repeats/holds, dragging, local reserved hotkeys, permission denial and repeated permission checks through test doubles.
 - Reset, disconnect/reconnect, duplicate sequences, expired nonces, and releasing holds with both WSS sockets still connected while application heartbeats stop.
 - Full real Controller/Target lifecycle using fake platform backends, including password rotation and forgetting the rejected old password.
+- The same verified WSS lifecycle with 225 ms simulated propagation in each direction (450 ms added full-path RTT), including capture failure, held-input cleanup and explicit reactivation. This is not a measurement on the user's network.
+- Windows activation dispatch, a concurrent physical callback during local modifier release, busy hook health, cancellation of queued activation, cursor restoration, activation failure/retry and network-loop watchdog behavior through Win32 API doubles on every test OS. These tests do not install real hooks or send native input.
 - Native DPAPI encryption, persistence and deletion **on Windows runners only**; skipped on Linux/macOS.
 
 Native input is never sent by automated tests. The fake sink exists only under `tests/`; production launchers instantiate only the native OS backend.
@@ -32,7 +34,7 @@ These checks have **not been performed on the user's computers**. Mark a row pas
 | Shortcuts | Test copy/paste, select all, save, undo and find. On Mac verify Left Ctrl=Command, Right Ctrl=Control, Windows=Control, Alt=Option. |
 | Mouse | Test left/right/middle and side buttons, double click, drag selection, window drag, vertical and horizontal scrolling. |
 | Continuous movement | Move beyond each controller screen edge repeatedly, including multi-monitor and high-DPI setups. Target keeps moving; pausing restores the local cursor. |
-| Hotkeys and suppression | Start paused. Toggle with Ctrl+Alt+F9; press Ctrl+Alt+F10 while holding a key/button. Chords stay local, target holds release, and ordinary local typing resumes. Test with controller console unfocused. |
+| Hotkeys and suppression | Start paused. Toggle with Ctrl+Alt+F9; hold the chord and confirm it toggles only once. Move the mouse while activating and verify it stays Controlling. Press Ctrl+Alt+F10 while holding a key/button. Chords stay local, target holds release, and ordinary local typing resumes. Test with controller console unfocused. |
 | Target local access | Move/type locally at the target while connected. There is no target-side suppression. Avoid simultaneous conflicting key holds during this check. |
 | Password change | While a remote key/button is held, type P and Enter locally at the target. Holds release; the old controller loses access. New password works, old one fails, ID persists. |
 | Forget Target | Use F and Enter while paused. Restart; credentials are requested again and old vault entry is gone. |
