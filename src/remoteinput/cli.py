@@ -1,10 +1,14 @@
 import argparse
 import asyncio
+import errno
 import json
+import socket
+import ssl
 import sys
 import time
 
 from websockets.asyncio.client import connect
+from websockets.exceptions import ConnectionClosed, InvalidHandshake, InvalidStatus
 
 from . import __version__
 from .config import RELAY_URL, client_options, private_logging, public_tls_context, relay_url
@@ -12,19 +16,89 @@ from .metrics import Metrics
 from .protocol import control, parse_control
 
 
-async def probe(url, count):
+class ProbeError(RuntimeError):
+    """A diagnostic message that never includes remote payloads or exception text."""
+
+
+def _probe_error(error):
+    # Exception strings, HTTP bodies/headers, and close reasons may contain secrets
+    # or terminal escapes. Only use known categories and numeric status/error codes.
+    if isinstance(error, socket.gaierror):
+        return "DNS lookup failed. Check that the relay hostname resolves to the server's public IP."
+    if isinstance(error, ssl.SSLCertVerificationError):
+        return ("TLS certificate verification failed. Check the certificate's hostname, expiry, "
+                "and full trust chain, and the clock on this PC. Keep certificate verification enabled.")
+    if isinstance(error, ssl.SSLError):
+        return ("TLS negotiation failed. Check Caddy's certificate logs and the configured hostname; "
+                "the default deployment needs a public DNS hostname for a trusted certificate.")
+    if isinstance(error, InvalidStatus):
+        code = error.response.status_code
+        if code in (502, 503, 504):
+            hint = "Check that the Python relay is running and Caddy can reach relay:8765."
+        elif code == 404:
+            hint = "Check the Caddy hostname and /ws route."
+        elif code in (401, 403):
+            hint = "Check the reverse proxy's access rules for the /ws route."
+        elif code == 429:
+            hint = "The server is rate limiting connections. Wait a minute before retrying."
+        else:
+            hint = "Check that /ws forwards WebSocket upgrades to the RemoteInput relay."
+        return f"WebSocket upgrade rejected (HTTP {int(code)}). {hint}"
+    if isinstance(error, InvalidHandshake):
+        return "WebSocket handshake failed. Check that the reverse proxy forwards WebSocket upgrades on /ws."
+    if isinstance(error, ConnectionClosed):
+        code = int(error.rcvd.code) if error.rcvd else 1006
+        if code == 1008 and error.rcvd.reason == "rate_limited":
+            # Admission may close before send() completes. Match this known token
+            # without reproducing an arbitrary close reason in the console.
+            return "The relay is rate limiting connections. Wait a minute before retrying."
+        return f"The relay connection closed (WebSocket code {code}). Check the Caddy and relay logs."
+    if isinstance(error, TimeoutError):
+        return ("The operation timed out. Check relay availability, server TCP port 443, "
+                "and the network connection. No mouse or keyboard permissions are needed for this probe.")
+    if isinstance(error, OSError):
+        code = getattr(error, "winerror", None) or error.errno
+        if isinstance(error, ConnectionRefusedError) or code in (errno.ECONNREFUSED, 10061):
+            return "Connection refused. Check that Caddy is running and listening on the relay's HTTPS port."
+        if code in (errno.EACCES, errno.EPERM, 10013):
+            return "Network access was denied. Check this PC's firewall or network policy for outbound HTTPS."
+        suffix = f" (OS error {int(code)})" if code is not None else ""
+        return f"Network or local I/O failed{suffix}. Check connectivity and the server logs."
+    if isinstance(error, ValueError):
+        return "The server returned an invalid RemoteInput diagnostic response. Check the /ws route and relay version."
+    return ("Unexpected error in the connection check. Run the project's Python with '-m pip check' "
+            "and report the failed stage.")
+
+
+async def probe(url, count, ssl_context=None):
+    url = relay_url(url)
+    private_logging()
     metrics = Metrics()
-    async with connect(url, **client_options()) as ws:
-        await ws.send(control("diagnostic"))
-        reply = parse_control(await asyncio.wait_for(ws.recv(), 10))
-        if reply["type"] != "diagnostic_ready":
-            raise RuntimeError("Relay diagnostic unavailable.")
-        for _ in range(count):
-            start = time.perf_counter()
-            pong = await ws.ping()
-            await asyncio.wait_for(pong, 5)
-            metrics.add("this_pc_relay_link_rtt", (time.perf_counter() - start) * 1000)
-            await asyncio.sleep(.2)
+    stage = "opening the verified WSS connection"
+    print("Checking the relay connection (no mouse or keyboard permissions required)...", flush=True)
+    try:
+        async with connect(url, **client_options(ssl_context)) as ws:
+            print("TLS certificate verified; WebSocket upgrade accepted.", flush=True)
+            stage = "waiting for the relay diagnostic reply"
+            await ws.send(control("diagnostic"))
+            reply = parse_control(await asyncio.wait_for(ws.recv(), 10))
+            if reply["type"] != "diagnostic_ready":
+                if reply["type"] == "error" and reply.get("reason") == "rate_limited":
+                    raise ProbeError("The relay is rate limiting connections. Wait a minute before retrying.")
+                raise ProbeError("The relay did not accept the diagnostic request. Check the /ws route and relay version.")
+            print("RemoteInput relay ready; measuring this PC's link RTT.", flush=True)
+            stage = "waiting for a relay ping reply"
+            for _ in range(count):
+                start = time.perf_counter()
+                pong = await ws.ping()
+                await asyncio.wait_for(pong, 5)
+                metrics.add("this_pc_relay_link_rtt", (time.perf_counter() - start) * 1000)
+                await asyncio.sleep(.2)
+            stage = "closing the diagnostic connection"
+    except ProbeError:
+        raise
+    except Exception as error:
+        raise ProbeError(f"Probe failed while {stage}. {_probe_error(error)}") from None
     metrics.display()
     print("Run on both PCs for each candidate relay region. This is link RTT, not end-to-end input latency.")
     return metrics.snapshot()

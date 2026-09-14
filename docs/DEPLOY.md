@@ -1,6 +1,6 @@
 # Developer setup: one relay, then native packages
 
-This is a one-time developer task. The end users only extract and launch the resulting configured packages. A domain/server account was not supplied, so there is no deployed address to embed yet.
+This is a one-time developer task. The end users only extract and launch the resulting configured packages. Deploy and verify the relay before embedding its address in those packages.
 
 ## Deploy the relay
 
@@ -31,6 +31,8 @@ On macOS/Linux:
 ```
 
 The public diagnostic connection exposes websocket ping/pong timing only, expires after 60 seconds, and cannot register a session or forward input. Input connections require target ownership authentication or the target's pairing password.
+
+The probe reports certificate/upgrade success and whether the Python relay accepted the diagnostic request. If it fails, follow [relay connection troubleshooting](TROUBLESHOOTING.md) to check DNS, TLS, the proxy route, and container status. A working `/health` page alone does not confirm that the Python relay is reachable.
 
 ## Keep identities persistent
 

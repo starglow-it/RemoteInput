@@ -2,11 +2,12 @@
 
 Control a Windows or macOS computer's mouse and keyboard from Windows 11. RemoteInput runs in a console and does not capture screens. Use your existing screen feed separately.
 
-**Status:** source implementation with automated protocol, safety, and TLS integration tests. A hosted relay address has not been supplied or deployed. Packages built without `REMOTEINPUT_RELAY_URL` are explicitly marked **setup-pending** and cannot pair until the developer rebuilds them with the deployed address. Interactive Windows/macOS behavior still needs the checks in [TESTING.md](docs/TESTING.md).
+**Status:** source implementation with automated protocol, safety, and TLS integration tests. Deploy and verify your relay before distributing configured packages. Packages built without `REMOTEINPUT_RELAY_URL` are explicitly marked **setup-pending** and cannot pair until the developer rebuilds them with the deployed address. Interactive Windows/macOS behavior still needs the checks in [TESTING.md](docs/TESTING.md).
 
 - [Everyday setup](docs/SETUP.md)
 - [Native executable downloads and verified build results](docs/BUILD-REPORT.md)
 - [One-time relay deployment and executable builds](docs/DEPLOY.md)
+- [Relay connection troubleshooting](docs/TROUBLESHOOTING.md)
 - [Checks and platform limits](docs/TESTING.md)
 - [Latency measurements and relay selection](docs/LATENCY.md)
 - [Protocol and safety design](docs/DESIGN.md)
