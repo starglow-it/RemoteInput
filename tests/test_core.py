@@ -247,6 +247,63 @@ def test_expired_lease_and_duplicate_sequence_are_not_injected(engine):
     assert not e.keys
 
 
+def test_input_can_use_the_previous_challenge_while_heartbeats_remain_fresh(engine):
+    e, inject, clock, nonce, _ = engine
+    deliver(e, nonce, Op.KEY, 2, 65, 1)
+    deliver(e, nonce, Op.BUTTON, 3, 1, 1)
+    clock[0] += .75
+    e.tick()
+    deliver(e, nonce, Op.HEARTBEAT, 4)
+    # On a 750 ms round trip, the immediately echoed heartbeat arrives in time,
+    # then input using that same token arrives before the next challenge echo.
+    clock[0] += .2
+    e.tick()
+    deliver(e, nonce, Op.MOVE, 5, 6, -2)
+    deliver(e, nonce, Op.BUTTON, 6, 1, 0)
+    deliver(e, nonce, Op.KEY, 7, 65, 0)
+    assert e.epoch == 123
+    assert inject.events[-3:] == [("move", 6, -2), ("button", 1, False), ("key", 65, False)]
+    assert not e.keys and not e.buttons
+
+
+def test_old_epoch_and_duplicate_frames_cannot_pause_a_new_active_epoch(engine):
+    e, _, clock, nonce, _ = engine
+    for seq in (4, 5):
+        clock[0] += .6
+        e.tick()
+        deliver(e, list(e.leases)[-1], Op.HEARTBEAT, seq)
+    clock[0] += .1
+    e.tick()
+    deliver(e, nonce, Op.PROBE, 3, epoch=0)
+    deliver(e, nonce, Op.KEY, 2, 65, 1)
+    assert e.epoch == 123 and not e.keys
+
+
+def test_genuinely_expired_input_still_resets_a_session_with_fresh_heartbeats(engine):
+    e, inject, clock, nonce, _ = engine
+    deliver(e, nonce, Op.KEY, 2, 65, 1)
+    deliver(e, nonce, Op.BUTTON, 3, 1, 1)
+    for seq in (4, 5):
+        clock[0] += .6
+        e.tick()
+        deliver(e, list(e.leases)[-1], Op.HEARTBEAT, seq)
+    deliver(e, nonce, Op.MOVE, 6, 90, 90)
+    assert not e.epoch and not e.keys and not e.buttons
+    assert ("move", 90, 90) not in inject.events
+    assert ("key", 65, False) in inject.events and ("button", 1, False) in inject.events
+
+
+def test_previous_challenge_cannot_extend_the_heartbeat_deadline(engine):
+    e, _, clock, nonce, _ = engine
+    deliver(e, nonce, Op.KEY, 2, 65, 1)
+    clock[0] += .6
+    e.tick()
+    deliver(e, list(e.leases)[-1], Op.HEARTBEAT, 3)
+    clock[0] += .35
+    deliver(e, nonce, Op.HEARTBEAT, 4)
+    assert not e.epoch and not e.keys
+
+
 def test_overload_releases_all_held_input(engine):
     e, inject, _, nonce, _ = engine
     deliver(e, nonce, Op.KEY, 2, 65, 1)

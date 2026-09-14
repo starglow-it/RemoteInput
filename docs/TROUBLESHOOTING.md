@@ -1,5 +1,30 @@
 # Connection and input troubleshooting
 
+## Target reports Paused: stale input
+
+This is the target's freshness check. It is separate from Python dependency checks and Accessibility approval. Early versions used the same 850 ms token-age cutoff for input and immediately echoed heartbeats. A token's age includes the full target-to-controller-to-target trip plus time waiting for the next challenge. That could reject an input frame or a pending-activation probe while the controller was still responsive.
+
+Update and restart **both the target and controller**. The target now gives input tokens 1,150 ms (850 ms plus the 200 ms challenge interval and 100 ms queue allowance), while heartbeat-token validation and the no-heartbeat timeout remain 850 ms. The controller also sends heartbeats while waiting for the activation reply. Expired input still pauses and releases holds; queues retain their 100 ms age limit. This update works with the existing relay.
+
+On the Mac target, type **Q + Enter** in the target console, then:
+
+```sh
+cd ~/RemoteInput
+git pull --ff-only
+.venv-mac/bin/python -m remoteinput target --relay wss://172-86-119-204.sslip.io/ws
+```
+
+Use `.venv/bin/python` instead if that is the environment used for your successful installation. On Windows, quit the paused controller with **Q + Enter**, then run from the source checkout:
+
+```text
+git pull --ff-only
+.venv\Scripts\python.exe -m remoteinput controller --relay wss://172-86-119-204.sslip.io/ws
+```
+
+These are editable installs, so a source update does not require reinstalling dependencies. Packaged users should extract the current [native downloads](BUILD-REPORT.md) and restart their launchers.
+
+The new target message includes the numeric token age and acceptance limit when the token is still in its bounded diagnostic history. If the problem continues, share that status line and the controller's **M + Enter** measurements. `stale heartbeat` or `controller heartbeat timed out` indicates that the stricter responsiveness check failed. These checks still require a sufficiently responsive connection; the 1,150 ms token window is not a promised input delay. Never include the password in a diagnostic report.
+
 ## Controlling changes immediately to Paused on Windows
 
 Update the Windows controller. Early versions ran cursor positioning and local modifier releases on the network thread while holding the input-policy lock. A physical input callback arriving during that transition could wait for the same lock, stalling activation. A busy hook thread could also be reported as unresponsive because its health timestamp was updated only when `GetMessage` returned, not when it dispatched hook callbacks.

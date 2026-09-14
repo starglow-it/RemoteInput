@@ -13,7 +13,8 @@ The automated suite covers:
 - Key repeats/holds, dragging, local reserved hotkeys, permission denial and repeated permission checks through test doubles.
 - Reset, disconnect/reconnect, duplicate sequences, expired nonces, and releasing holds with both WSS sockets still connected while application heartbeats stop.
 - Full real Controller/Target lifecycle using fake platform backends, including password rotation and forgetting the rejected old password.
-- The same verified WSS lifecycle with 225 ms simulated propagation in each direction (450 ms added full-path RTT), including capture failure, held-input cleanup and explicit reactivation. This is not a measurement on the user's network.
+- The same verified WSS lifecycle with 225 ms and 375 ms simulated propagation in each direction (450 ms and 750 ms added full-path RTT), including capture failure, held-input cleanup and explicit reactivation. The 750 ms case sustains a held drag for six seconds across many token refreshes; the earlier shared token cutoff reproduced `Paused: stale input`. This is not a measurement on the user's network.
+- Independent input-token/heartbeat deadlines: a still-fresh heartbeat permits input bearing the previous challenge, genuinely expired input resets/releases, an old token cannot refresh the heartbeat deadline, and old epochs/duplicates cannot pause the current activation.
 - Windows activation dispatch, a concurrent physical callback during local modifier release, busy hook health, cancellation of queued activation, cursor restoration, activation failure/retry and network-loop watchdog behavior through Win32 API doubles on every test OS. These tests do not install real hooks or send native input.
 - Native DPAPI encryption, persistence and deletion **on Windows runners only**; skipped on Linux/macOS.
 
@@ -39,7 +40,7 @@ These checks have **not been performed on the user's computers**. Mark a row pas
 | Password change | While a remote key/button is held, type P and Enter locally at the target. Holds release; the old controller loses access. New password works, old one fails, ID persists. |
 | Forget Target | Use F and Enter while paused. Restart; credentials are requested again and old vault entry is gone. |
 | Drop network | While dragging or holding a modifier, disable controller networking and then relay networking in separate trials. Holds release; restored connectivity remains paused. |
-| Freeze controller | Suspend its process while holding a key/button, leaving the relay alive. Target releases within roughly the 850 ms lease plus scheduling time. Resume; control must be reactivated. |
+| Freeze controller | Suspend its process while holding a key/button, leaving the relay alive. Target releases within roughly 850 ms after its last accepted heartbeat, plus scheduling time; in-flight heartbeats can add network transit time after suspension. Resume; control must be reactivated. |
 | Overload | Introduce a long process pause/slow injection or sustained excessive event rate in a test build. The app pauses and releases; it does not replay a long backlog on recovery. |
 | Elevated/protected Windows app | Confirm ordinary apps work. Secure desktop/UAC must require local interaction. No claim of higher-integrity injection from a normal process. |
 | Real latency | Collect median/p95 live target-ACK measurements and relay-link measurements from both PCs. Record region, wired/Wi-Fi, location, time and network conditions. Measure the screen feed separately. |

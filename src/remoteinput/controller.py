@@ -114,8 +114,12 @@ class Controller:
                 if kind == "challenge":
                     self.lease = message["nonce"]
                     self.lease_received = time.monotonic()
-                    if self.epoch and self.capture.healthy():
-                        self.outbox.put(self.frame(Event(Op.HEARTBEAT, epoch=self.epoch)).pack())
+                    epoch = self.epoch or self.pending_epoch
+                    if epoch and self.capture.healthy():
+                        # ACTIVATE is already ahead of this heartbeat in the
+                        # same outbox. Don't spend a second network trip waiting
+                        # for its reply before proving that capture is responsive.
+                        self.outbox.put(self.frame(Event(Op.HEARTBEAT, epoch=epoch)).pack())
                 elif kind == "activated":
                     if message["epoch"] != self.pending_epoch or not self.pending_epoch:
                         self.send_reset()

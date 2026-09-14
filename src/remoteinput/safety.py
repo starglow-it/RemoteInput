@@ -3,7 +3,7 @@ import secrets
 import threading
 import time
 
-from .config import CHALLENGE_INTERVAL, LEASE_SECONDS
+from .config import CHALLENGE_INTERVAL, INPUT_TOKEN_SECONDS, LEASE_SECONDS
 from .protocol import Op, ack, control
 from .queueing import InputQueue
 
@@ -73,20 +73,37 @@ class TargetEngine:
         if not self.queue.put(event):
             self.reset("Paused: input overload")
 
-    def valid_lease(self, nonce, now):
-        return nonce in self.leases and now - self.leases[nonce] < LEASE_SECONDS
+    def valid_lease(self, nonce, now, limit=INPUT_TOKEN_SECONDS):
+        return nonce in self.leases and 0 <= now - self.leases[nonce] < limit
+
+    def reject_stale(self, event, now, limit):
+        issued = self.leases.get(event.lease)
+        age = "expired or unknown" if issued is None else f"age {(now - issued) * 1000:.0f} ms"
+        kind = "heartbeat" if event.op == Op.HEARTBEAT else "input"
+        reason = f"Paused: stale {kind} (token {age}; limit {limit * 1000:.0f} ms)"
+        active = self.epoch
+        self.reset(reason)
+        if event.op == Op.ACTIVATE:
+            self.emit(control("paused", epoch=event.epoch))
+            if not active:
+                self.status(reason)
 
     def tick(self):
         with self.lock:
             now = self.clock()
-            self.leases = {n: t for n, t in self.leases.items() if now - t < LEASE_SECONDS}
+            # Retain a small bounded history for numeric failure diagnostics;
+            # valid_lease still enforces the shorter per-operation deadline.
+            self.leases = {n: t for n, t in self.leases.items()
+                           if now - t < INPUT_TOKEN_SECONDS + LEASE_SECONDS}
             if self.connected and now - self.last_challenge >= CHALLENGE_INTERVAL:
                 nonce = secrets.randbits(64) or 1
                 self.leases[nonce] = now
                 self.last_challenge = now
                 self.emit(control("challenge", nonce=nonce))
-            if self.epoch and (now - self.last_heartbeat > LEASE_SECONDS or not self.injector.permitted()):
-                self.reset("Paused: controller lease or permission expired")
+            if self.epoch and now - self.last_heartbeat > LEASE_SECONDS:
+                self.reset("Paused: controller heartbeat timed out")
+            elif self.epoch and not self.injector.permitted():
+                self.reset("Paused: input permission lost")
             if not self.epoch and (self.keys or self.buttons):
                 self.reset("Paused: retrying input release")
 
@@ -100,8 +117,17 @@ class TargetEngine:
                 now = self.clock()
                 if self.blocked or not self.connected:
                     return True
-                if not self.valid_lease(event.lease, now):
-                    self.reset("Paused: stale input")
+                # A late paused-mode probe or an old/duplicate frame cannot
+                # invalidate a different activation. No input is injected here.
+                if event.op != Op.ACTIVATE:
+                    if event.op == Op.PROBE and event.epoch == 0:
+                        if self.epoch:
+                            return True
+                    elif event.epoch != self.epoch or not self.epoch or event.seq <= self.seq:
+                        return True
+                limit = LEASE_SECONDS if event.op == Op.HEARTBEAT else INPUT_TOKEN_SECONDS
+                if not self.valid_lease(event.lease, now, limit):
+                    self.reject_stale(event, now, limit)
                     return True
                 if event.op == Op.ACTIVATE:
                     if (not event.epoch or event.epoch == self.last_epoch
@@ -122,7 +148,7 @@ class TargetEngine:
                     return True
                 self.seq = event.seq
                 if now - self.last_heartbeat > LEASE_SECONDS:
-                    self.reset("Paused: controller unresponsive")
+                    self.reset("Paused: controller heartbeat timed out")
                     return True
                 if event.op == Op.HEARTBEAT:
                     self.last_heartbeat = now
