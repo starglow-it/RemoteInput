@@ -5,6 +5,7 @@ Control a Windows or macOS computer's mouse and keyboard from Windows 11. Remote
 **Status:** source implementation with automated protocol, safety, and TLS integration tests. A hosted relay address has not been supplied or deployed. Packages built without `REMOTEINPUT_RELAY_URL` are explicitly marked **setup-pending** and cannot pair until the developer rebuilds them with the deployed address. Interactive Windows/macOS behavior still needs the checks in [TESTING.md](docs/TESTING.md).
 
 - [Everyday setup](docs/SETUP.md)
+- [Native executable downloads and verified build results](docs/BUILD-REPORT.md)
 - [One-time relay deployment and executable builds](docs/DEPLOY.md)
 - [Checks and platform limits](docs/TESTING.md)
 - [Latency measurements and relay selection](docs/LATENCY.md)
@@ -32,4 +33,3 @@ python -m remoteinput self-check
 ```
 
 Build native packages on Windows, Intel macOS, and Apple Silicon macOS. End users need no Python, VPN, or config-file editing. See [DEPLOY.md](docs/DEPLOY.md) for the developer's deployment and embedding step.
-
