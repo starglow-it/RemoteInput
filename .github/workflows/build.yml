@@ -43,7 +43,7 @@ jobs:
       - run: python -m pytest -q
       - name: Package the configured app or a clearly marked setup-pending build
         env:
-          REMOTEINPUT_RELAY_URL: ${{ vars.REMOTEINPUT_RELAY_URL }}
+          REMOTEINPUT_RELAY_URL: ${{ vars.REMOTEINPUT_RELAY_URL || 'wss://172-86-119-204.sslip.io/ws' }}
         run: python scripts/build.py --unconfigured
       - uses: actions/upload-artifact@v4
         with:

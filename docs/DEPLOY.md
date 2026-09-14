@@ -44,7 +44,9 @@ Upgrade by pulling the reviewed source and rerunning `docker compose ... up -d -
 
 ## Embed the address and build
 
-Set the repository Actions variable **REMOTEINPUT_RELAY_URL** to the real `wss://.../ws` address, then run **Verify and package** in Actions. The address is public configuration, not a secret. The workflow builds Windows x64, Intel macOS and Apple Silicon macOS packages and uploads them as run artifacts. A missing variable produces visibly named setup-pending packages, never a fabricated working relay address.
+The workflow currently embeds **`wss://172-86-119-204.sslip.io/ws`**, which the owner verified with the Windows probe on 14 September 2026. The reported link RTT was 225.67 ms median and 226.23 ms p95 across 10 samples; this does not measure the target leg or screen feed. The Ubuntu relay must remain available at that hostname.
+
+To build for a different relay, set the repository Actions variable **REMOTEINPUT_RELAY_URL** to its verified `wss://.../ws` address, then run **Verify and package** in Actions. The variable overrides the workflow's default. The address is public configuration, not a secret. The workflow builds Windows x64, Intel macOS and Apple Silicon macOS packages and uploads them as run artifacts. A local `scripts/build.py --unconfigured` run without an address still creates a clearly marked setup-pending validation package.
 
 Alternatively, create the isolated developer environment in README.md on each native build OS. Do not install the project's pinned dependencies into your shared Python environment.
 

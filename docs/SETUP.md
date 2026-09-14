@@ -1,6 +1,6 @@
 # RemoteInput setup
 
-Your developer supplies a package with the working relay address included. A package whose name ends in `setup-pending` is a validation build, not a configured app. No public relay has been deployed as part of this repository's initial implementation.
+The configured packages include the relay address. Extract the package and use its launchers; you do not need to enter a server address. Keep the Ubuntu relay running while using RemoteInput. Older packages whose names end in `setup-pending` are validation builds without an embedded relay address.
 
 ## First use
 
@@ -52,4 +52,3 @@ Text follows the target's keyboard layout. Use matching layouts for predictable 
 - **Unsigned build:** Windows or macOS may show the normal publisher/security approval. Public distribution should use the signing/notarization steps in DEPLOY.md; never disable the OS security system.
 
 Keep the target console private: it intentionally displays the pairing password. RemoteInput does not write it or typed input to logs.
-
