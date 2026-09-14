@@ -18,10 +18,16 @@ Replace the example hostname with your actual DNS name. Caddy provisions and ren
 
 The Python relay runs as a non-root user on a private Docker network. Only Caddy is exposed. Caddy replaces the client-supplied `X-Real-IP` header before forwarding it, so application rate limits use the actual client address. `--behind-proxy` must only be used behind this isolated trusted proxy. For direct TLS hosting, supply `--cert` and `--key` instead; do not set `--behind-proxy` on a publicly exposed plain websocket port.
 
-Check the actual websocket route from both PCs, not just the HTTP health page:
+Check the actual websocket route from both PCs, not just the HTTP health page. From the source checkout, first create the virtual environment described in README.md. On Windows:
+
+```text
+.venv\Scripts\python.exe -m remoteinput probe --relay wss://YOUR-ACTUAL-DOMAIN/ws --count 30
+```
+
+On macOS/Linux:
 
 ```sh
-python -m remoteinput probe --relay wss://YOUR-ACTUAL-DOMAIN/ws --count 30
+.venv/bin/python -m remoteinput probe --relay wss://YOUR-ACTUAL-DOMAIN/ws --count 30
 ```
 
 The public diagnostic connection exposes websocket ping/pong timing only, expires after 60 seconds, and cannot register a session or forward input. Input connections require target ownership authentication or the target's pairing password.
@@ -38,12 +44,22 @@ Upgrade by pulling the reviewed source and rerunning `docker compose ... up -d -
 
 Set the repository Actions variable **REMOTEINPUT_RELAY_URL** to the real `wss://.../ws` address, then run **Verify and package** in Actions. The address is public configuration, not a secret. The workflow builds Windows x64, Intel macOS and Apple Silicon macOS packages and uploads them as run artifacts. A missing variable produces visibly named setup-pending packages, never a fabricated working relay address.
 
-Alternatively, on each native developer OS:
+Alternatively, create the isolated developer environment in README.md on each native build OS. Do not install the project's pinned dependencies into your shared Python environment.
+
+Windows:
+
+```text
+.venv\Scripts\python.exe -m pip check
+.venv\Scripts\python.exe -m pytest -q
+.venv\Scripts\python.exe scripts/build.py --relay-url wss://YOUR-ACTUAL-DOMAIN/ws
+```
+
+macOS:
 
 ```sh
-python -m pip install -e ".[test,build]"
-python -m pytest -q
-python scripts/build.py --relay-url wss://YOUR-ACTUAL-DOMAIN/ws
+.venv/bin/python -m pip check
+.venv/bin/python -m pytest -q
+.venv/bin/python scripts/build.py --relay-url wss://YOUR-ACTUAL-DOMAIN/ws
 ```
 
 PyInstaller bundles the Python runtime, websocket dependency and certifi CA bundle. This lets macOS validate public relay certificates without a developer Python installation or its OpenSSL trust files. Windows packages contain `.cmd` launchers and an `.exe`; macOS packages contain executable `.command` launchers and a native binary. Keep the entire extracted folder together. Native builds must be made on the destination OS/architecture; the Linux diagnostic build is not a Windows/macOS executable. [PyInstaller documents this platform dependency](https://pyinstaller.org/en/stable/operating-mode.html).

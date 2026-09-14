@@ -22,14 +22,28 @@ Target IDs are assigned sequentially by the relay. Each target generates its own
 
 ## Development
 
-Requires Python 3.12+ on developer machines only:
+Requires Python 3.12+ on developer machines only. Install into a project virtual environment so RemoteInput's pinned dependencies do not replace packages used by other tools. Run these commands from the repository root.
+
+Windows (Command Prompt or PowerShell):
+
+```text
+python -m venv .venv
+.venv\Scripts\python.exe -m pip install -e ".[test,build]"
+.venv\Scripts\python.exe -m pip check
+.venv\Scripts\python.exe -m pytest -q
+.venv\Scripts\python.exe -m remoteinput self-check
+```
+
+macOS/Linux:
 
 ```sh
-python -m pip install -e ".[test,build]"
-python -m pytest -q
-python -m ruff check src tests scripts
-python scripts/benchmark.py --output docs/latency-local.json
-python -m remoteinput self-check
+python3 -m venv .venv
+.venv/bin/python -m pip install -e ".[test,build]"
+.venv/bin/python -m pip check
+.venv/bin/python -m pytest -q
+.venv/bin/python -m remoteinput self-check
 ```
+
+Use that virtual environment's Python for all development commands, including `-m ruff check src tests scripts` and `scripts/benchmark.py --output docs/latency-local.json`. Activation is optional when using these explicit interpreter paths. See [dependency conflict recovery](docs/DEPENDENCIES.md) if you already installed into a shared Python environment.
 
 Build native packages on Windows, Intel macOS, and Apple Silicon macOS. End users need no Python, VPN, or config-file editing. See [DEPLOY.md](docs/DEPLOY.md) for the developer's deployment and embedding step.
