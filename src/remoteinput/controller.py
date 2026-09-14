@@ -6,11 +6,12 @@ import time
 
 from websockets.asyncio.client import connect
 
-from .config import client_options
+from .config import NETWORK_TIMEOUT_MAX, client_options
 from .metrics import Metrics
 from .platforms import controller_capture
 from .protocol import ACK, ACK_CODE, Event, Op, control, parse_control
 from .queueing import InputQueue, Overload
+from .timing import NetworkTiming
 from .transport import Console, Outbox, run_tasks
 from .vault import Vault
 
@@ -23,6 +24,7 @@ class Controller:
         self.queue = InputQueue(lambda: self.loop.call_soon_threadsafe(self.ready.set))
         self.capture = capture_factory(self.enqueue, self.toggle, self.stop_control)
         self.metrics = Metrics()
+        self.network = NetworkTiming()
         self.connected = False
         self.running = True
         self.epoch = 0
@@ -68,11 +70,12 @@ class Controller:
     def activate(self):
         if self.epoch or self.pending_epoch:
             return
-        if not self.connected or not self.lease or time.monotonic() - self.lease_received > .5:
+        if (not self.connected or not self.lease
+                or time.monotonic() - self.lease_received >= self.network.timeout):
             print("Paused: waiting for a fresh target connection. Press Ctrl+Alt+F9 again when connected.")
             return
         self.pending_epoch = secrets.randbits(64) or 1
-        self.activate_deadline = time.monotonic() + 2
+        self.activate_deadline = time.monotonic() + self.network.input_timeout
         self.queue.clear()
         self.outbox.put(self.frame(Event(Op.ACTIVATE, epoch=self.pending_epoch)).pack())
 
@@ -105,6 +108,8 @@ class Controller:
                     if 0 <= elapsed < 10000 and 0 < seq <= self.seq:
                         self.last_ack = time.monotonic()
                         self.metrics.add("controller_target_controller_rtt", elapsed)
+                        if op == Op.PROBE:
+                            self.network.observe(elapsed / 1000)
                         self.metrics.add("target_queue", queue_us / 1000)
                         if op in (Op.MOVE, Op.KEY, Op.BUTTON, Op.SCROLL):
                             self.metrics.add("target_injection", injection_us / 1000)
@@ -115,10 +120,10 @@ class Controller:
                     self.lease = message["nonce"]
                     self.lease_received = time.monotonic()
                     epoch = self.epoch or self.pending_epoch
-                    if epoch and self.capture.healthy():
+                    if self.capture.healthy():
                         # ACTIVATE is already ahead of this heartbeat in the
-                        # same outbox. Don't spend a second network trip waiting
-                        # for its reply before proving that capture is responsive.
+                        # same outbox. Epoch 0 also measures the route while
+                        # paused, without activating input or renewing a hold.
                         self.outbox.put(self.frame(Event(Op.HEARTBEAT, epoch=epoch)).pack())
                 elif kind == "activated":
                     if message["epoch"] != self.pending_epoch or not self.pending_epoch:
@@ -140,8 +145,10 @@ class Controller:
             self.capture.network_tick()
             if self.epoch and not self.capture.healthy():
                 self.stop_control("Windows input capture stopped responding")
-            elif self.epoch and now - self.lease_received > .65:
-                self.stop_control("target updates timed out; check the network and target console")
+            elif self.epoch and now - self.lease_received >= self.network.timeout:
+                gap = (now - self.lease_received) * 1000
+                self.stop_control(f"target updates timed out (gap {gap:.0f} ms; "
+                                  f"limit {self.network.timeout * 1000:.0f} ms)")
             elif self.pending_epoch and now > self.activate_deadline:
                 self.stop_control("target activation timed out")
             if self.lease and now - last_probe >= .5:
@@ -153,7 +160,7 @@ class Controller:
         while True:
             start = time.perf_counter()
             pong = await ws.ping()
-            await asyncio.wait_for(pong, 2)
+            await asyncio.wait_for(pong, 5)
             self.metrics.add("controller_relay_link_rtt", (time.perf_counter() - start) * 1000)
             await asyncio.sleep(10)
 
@@ -181,6 +188,7 @@ class Controller:
                             raise ConnectionError()
                         self.vault.save(self.identity)
                         self.connected = True
+                        self.network = NetworkTiming()
                         self.outbox = Outbox(self.loop, metrics=self.metrics)
                         attempt = 0
                         print("Connected / Paused", flush=True)
@@ -190,6 +198,9 @@ class Controller:
                                 command = await console.commands.get()
                                 if command in ("m", "measure"):
                                     self.metrics.display()
+                                    print(f"Network silence limit on this controller: "
+                                          f"{self.network.timeout * 1000:.0f} ms "
+                                          f"(automatic, capped at {NETWORK_TIMEOUT_MAX * 1000:.0f} ms).")
                                     print("RTT is a full return trip; it excludes your separate screen feed.")
                                 elif command in ("f", "forget target"):
                                     self.stop_control()

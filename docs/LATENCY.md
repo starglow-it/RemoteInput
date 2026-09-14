@@ -31,6 +31,8 @@ On 14 September 2026, the owner reported a successful Windows probe to `wss://17
 
 These are user-reported measurements over the actual client-to-relay connection. The PC's location, wired/Wi-Fi connection, and traffic conditions were not supplied. The target-to-relay leg, native injection time, full controller-to-target-to-controller RTT, and separate screen feed have not yet been measured on this pair. This small live sample is separate from the controlled optimization experiment above; the different networks cannot be compared as a before/after software result.
 
+Later target diagnostics reported heartbeat-token ages of **900 ms and 927 ms**, exceeding the old 850 ms cutoff, alongside a controller target-update timeout. A freshly echoed heartbeat's token age includes the target-to-controller-to-target trip and local processing. These two failure samples are not a median/p95 latency report or a one-way delay measurement. The app now uses bounded automatic network timing; full **M + Enter** measurements from the real pair are still needed. The 900 ms RTT / 750 ms delivery-stall regression in [TESTING.md](TESTING.md) is a separate simulated reliability check, not a new live latency benchmark.
+
 ## Measure the real pair
 
 While the controller is paused, type **M + Enter** after using control for a while. The rolling report contains:
@@ -43,6 +45,8 @@ While the controller is paused, type **M + Enter** after using control for a whi
 - `controller_relay_link_rtt`: websocket ping/pong on just the controller's relay connection.
 
 The RTT clock is the controller's monotonic clock echoed by the target, so clocks do not need synchronization. Queue/injection clocks are local durations. RTT is **not one-way input delay**; dividing it by two assumes symmetric routing and symmetric processing, which have not been established. Capture-to-ACK is a return-trip diagnostic including local buffering. The visible delay also includes your independently supplied screen feed, which this app neither captures nor measures.
+
+The report also prints the controller's current automatic network-silence limit (2–3 seconds). That is a failure-detection allowance, not added input delay. Local queues still expire at 100 ms; inputs are dispatched immediately. The target independently selects its bounded deadline using challenge/heartbeat RTT, so the two endpoint values need not match exactly.
 
 ## Choose a relay using both PCs
 

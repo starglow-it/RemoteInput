@@ -76,7 +76,9 @@ class Target:
                                 else:
                                     message = parse_control(raw)
                                     if message["type"] in ("peer_joined", "peer_gone"):
-                                        self.engine.reset()
+                                        # A new peer needs fresh challenges and
+                                        # its own route calibration; stay paused.
+                                        self.engine.peer_changed()
                                     elif message["type"] == "rotated" and self.rotating:
                                         self.identity = finish_rotation(self.vault, self.identity)
                                         self.rotating = False
@@ -122,4 +124,3 @@ async def run_target(url):
     injector = target_injector()
     injector.ensure_permissions()
     await Target(url, Vault(url, "target"), injector).run()
-

@@ -12,11 +12,11 @@ except ImportError:
 
 QUEUE_LIMIT = 256
 MAX_QUEUE_AGE = 0.100
-LEASE_SECONDS = 0.850
 CHALLENGE_INTERVAL = 0.200
-# Input may use a challenge until the next one arrives, then spend up to one
-# allowed local queue interval before injection. This is NOT the heartbeat timeout.
-INPUT_TOKEN_SECONDS = LEASE_SECONDS + CHALLENGE_INTERVAL + MAX_QUEUE_AGE
+# WAN delay is distinct from local queue or capture-thread responsiveness.
+# Automatic network timing stays within these bounds, even on a stalled route.
+NETWORK_TIMEOUT_MIN = 2.0
+NETWORK_TIMEOUT_MAX = 3.0
 SEND_TIMEOUT = 0.350
 MAX_FRAME = 2048
 

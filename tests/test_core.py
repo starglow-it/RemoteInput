@@ -196,7 +196,7 @@ def test_unresponsive_controller_releases_with_relay_still_connected(engine):
     e, inject, clock, nonce, _ = engine
     deliver(e, nonce, Op.KEY, 2, 65, 1)
     deliver(e, nonce, Op.BUTTON, 3, 1, 1)
-    clock[0] += .9
+    clock[0] += 2.01
     e.tick()
     assert e.connected and e.epoch == 0
     assert ("key", 65, False) in inject.events and ("button", 1, False) in inject.events
@@ -208,7 +208,7 @@ def test_fresh_input_without_controller_heartbeat_cannot_keep_a_hold_alive(engin
     clock[0] += .6
     e.tick()
     fresh_nonce = list(e.leases)[-1]
-    clock[0] += .3
+    clock[0] += 1.41
     deliver(e, fresh_nonce, Op.MOVE, 3, 5, 5)
     assert e.epoch == 0 and not e.keys
 
@@ -241,7 +241,7 @@ def test_expired_lease_and_duplicate_sequence_are_not_injected(engine):
     deliver(e, nonce, Op.KEY, 2, 65, 1)
     deliver(e, nonce, Op.KEY, 2, 66, 1)
     assert ("key", 66, True) not in inject.events
-    clock[0] += .9
+    clock[0] += 3.31
     deliver(e, nonce, Op.KEY, 3, 67, 1)
     assert ("key", 67, True) not in inject.events
     assert not e.keys
@@ -283,17 +283,17 @@ def test_genuinely_expired_input_still_resets_a_session_with_fresh_heartbeats(en
     e, inject, clock, nonce, _ = engine
     deliver(e, nonce, Op.KEY, 2, 65, 1)
     deliver(e, nonce, Op.BUTTON, 3, 1, 1)
-    for seq in (4, 5):
+    for seq in (4, 5, 6, 7):
         clock[0] += .6
         e.tick()
         deliver(e, list(e.leases)[-1], Op.HEARTBEAT, seq)
-    deliver(e, nonce, Op.MOVE, 6, 90, 90)
+    deliver(e, nonce, Op.MOVE, 8, 90, 90)
     assert not e.epoch and not e.keys and not e.buttons
     assert ("move", 90, 90) not in inject.events
     assert ("key", 65, False) in inject.events and ("button", 1, False) in inject.events
 
 
-def test_previous_challenge_cannot_extend_the_heartbeat_deadline(engine):
+def test_replayed_challenge_cannot_extend_the_heartbeat_deadline(engine):
     e, _, clock, nonce, _ = engine
     deliver(e, nonce, Op.KEY, 2, 65, 1)
     clock[0] += .6
@@ -301,7 +301,66 @@ def test_previous_challenge_cannot_extend_the_heartbeat_deadline(engine):
     deliver(e, list(e.leases)[-1], Op.HEARTBEAT, 3)
     clock[0] += .35
     deliver(e, nonce, Op.HEARTBEAT, 4)
+    assert e.epoch == 123 and e.last_heartbeat == pytest.approx(1.6)
+    clock[0] += 1.66
+    e.tick()
     assert not e.epoch and not e.keys
+
+
+@pytest.mark.parametrize("rtt", [.900, .927])
+def test_reported_heartbeat_ages_keep_typing_and_dragging_active(engine, rtt):
+    e, inject, clock, nonce, _ = engine
+    e.reset()
+    clock[0] += rtt / 2
+    deliver(e, nonce, Op.ACTIVATE, 2, epoch=456)
+    deliver(e, nonce, Op.KEY, 3, 65, 1, epoch=456)
+    deliver(e, nonce, Op.BUTTON, 4, 1, 1, epoch=456)
+    clock[0] += rtt / 2
+    e.tick()
+    deliver(e, nonce, Op.HEARTBEAT, 5, epoch=456)
+    assert e.epoch == 456 and e.network.rtt == pytest.approx(rtt)
+    clock[0] += .2
+    deliver(e, nonce, Op.MOVE, 6, 8, -3, epoch=456)
+    deliver(e, nonce, Op.KEY, 7, 65, 0, epoch=456)
+    deliver(e, nonce, Op.BUTTON, 8, 1, 0, epoch=456)
+    assert e.epoch == 456 and not e.keys and not e.buttons
+    assert inject.events[-3:] == [("move", 8, -3), ("key", 65, False), ("button", 1, False)]
+
+
+def test_paused_calibration_cannot_activate_or_extend_a_hold(engine):
+    e, _, clock, nonce, _ = engine
+    e.reset()
+    last_heartbeat = e.last_heartbeat
+    clock[0] += .927
+    deliver(e, nonce, Op.HEARTBEAT, 2, epoch=0)
+    assert not e.epoch and e.last_heartbeat == last_heartbeat
+    observed = e.network.rtt, e.network.variation
+    clock[0] += .2
+    deliver(e, nonce, Op.HEARTBEAT, 3, epoch=0)
+    assert (e.network.rtt, e.network.variation) == observed
+    e.peer_changed()
+    assert e.network.rtt is None and not e.epoch and nonce in e.leases
+    e.set_connected(True)
+    assert e.network.rtt is None and not e.leases and not e.epoch
+
+
+def test_slow_route_still_has_a_three_second_cleanup_bound(engine):
+    e, inject, clock, nonce, _ = engine
+    e.reset()
+    clock[0] += 2.5
+    deliver(e, nonce, Op.HEARTBEAT, 2, epoch=0)
+    assert e.network.timeout == 3
+    e.tick()
+    fresh = list(e.leases)[-1]
+    deliver(e, fresh, Op.ACTIVATE, 3, epoch=456)
+    deliver(e, fresh, Op.KEY, 4, 65, 1, epoch=456)
+    deliver(e, fresh, Op.BUTTON, 5, 1, 1, epoch=456)
+    clock[0] += 3.01
+    e.tick()
+    assert e.connected and not e.epoch and not e.keys and not e.buttons
+    assert ("key", 65, False) in inject.events and ("button", 1, False) in inject.events
+    deliver(e, list(e.leases)[-1], Op.HEARTBEAT, 6, epoch=456)
+    assert not e.epoch  # Late traffic never reactivates a timed-out session.
 
 
 def test_overload_releases_all_held_input(engine):

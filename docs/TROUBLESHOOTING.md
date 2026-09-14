@@ -2,9 +2,11 @@
 
 ## Target reports Paused: stale input
 
-This is the target's freshness check. It is separate from Python dependency checks and Accessibility approval. Early versions used the same 850 ms token-age cutoff for input and immediately echoed heartbeats. A token's age includes the full target-to-controller-to-target trip plus time waiting for the next challenge. That could reject an input frame or a pending-activation probe while the controller was still responsive.
+This section also applies to `stale heartbeat` and `target updates timed out`. The owner reported heartbeat-token ages of 900/927 ms against an 850 ms limit, plus controller update gaps beyond its old 650 ms cutoff. Those fixed limits were too short for that connection. The earlier input-only fix did not address both network limits. These messages are separate from Python dependency checks and Accessibility approval.
 
-Update and restart **both the target and controller**. The target now gives input tokens 1,150 ms (850 ms plus the 200 ms challenge interval and 100 ms queue allowance), while heartbeat-token validation and the no-heartbeat timeout remain 850 ms. The controller also sends heartbeats while waiting for the activation reply. Expired input still pauses and releases holds; queues retain their 100 ms age limit. This update works with the existing relay.
+Update and restart **both the target and controller**. Both now use measured full-path RTT and variation to choose a network deadline bounded between **2 and 3 seconds**. The target calibrates from immediate challenge echoes even while paused; the controller uses target-acknowledged probes. Activation, heartbeat age and network silence use the same policy. Input tokens add a 300 ms refresh/queue allowance. This update works with the existing relay and adds no intentional delay before sending input.
+
+Failure cleanup now allows **2–3 seconds after the last accepted new heartbeat**, plus OS scheduling and any heartbeats already in flight. Repeating a nonce cannot renew a hold. Severe stalls still pause/reset, reconnection stays paused, and local queues keep their 100 ms limit. The Windows capture and local network-loop watchdogs remain unchanged. No manual timeout setting is needed.
 
 On the Mac target, type **Q + Enter** in the target console, then:
 
@@ -23,7 +25,7 @@ git pull --ff-only
 
 These are editable installs, so a source update does not require reinstalling dependencies. Packaged users should extract the current [native downloads](BUILD-REPORT.md) and restart their launchers.
 
-The new target message includes the numeric token age and acceptance limit when the token is still in its bounded diagnostic history. If the problem continues, share that status line and the controller's **M + Enter** measurements. `stale heartbeat` or `controller heartbeat timed out` indicates that the stricter responsiveness check failed. These checks still require a sufficiently responsive connection; the 1,150 ms token window is not a promised input delay. Never include the password in a diagnostic report.
+Target freshness failures include token age and limit; heartbeat/update silence failures include the measured gap and limit. The controller's **M + Enter** report includes its current automatic timeout alongside median/p95 RTT and local processing measurements. If pauses continue, share those numbers and the matching target status line, omitting the password display. A heartbeat message still showing `limit 850 ms` means the old target process is running. Network deadlines are safety limits, not promised input delays; a route that stalls beyond the bounded deadline still pauses.
 
 ## Controlling changes immediately to Paused on Windows
 
@@ -46,7 +48,7 @@ The editable install uses the updated source directly. The Windows controller up
 | `Windows input capture stopped responding` | The hook thread is unresponsive. Update/restart the controller and check that the Windows desktop is unlocked. |
 | `controller network loop stopped responding` | Local processing stalled; input suppression was disabled to restore local control. |
 | `Windows could not activate input capture; check the unlocked desktop` | A native desktop/cursor/input operation failed. Return to the normal unlocked desktop and retry. |
-| `target updates timed out; check the network and target console` | Fresh target challenges stopped arriving. Check the target process and connection. |
+| `target updates timed out (gap ...; limit ...)` | Fresh target challenges stopped arriving beyond the automatic network deadline. Read the target console and collect M + Enter measurements. Older builds use a fixed 650 ms cutoff; update both endpoints. |
 | `target activation timed out` | The target did not complete activation within the safety deadline. Check its console and network. |
 | `target stopped control; see the target console for the reason` | Read the target's `Paused: ...` line for permission loss, stale input, unsupported keys, injection failure or overload. |
 | A controller input queue safety message | Processing fell behind; the controller reset instead of replaying a backlog. |

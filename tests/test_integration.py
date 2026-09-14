@@ -132,7 +132,7 @@ async def test_controller_freeze_releases_while_both_wss_connections_remain_open
         await ws.send(Event(Op.KEY, epoch=123, seq=2, lease=nonce, a=65, b=1).pack())
         await ws.send(Event(Op.BUTTON, epoch=123, seq=3, lease=nonce, a=1, b=1).pack())
         await eventually(lambda: bool(target.engine.keys))
-        await eventually(lambda: not target.engine.keys and not target.engine.buttons, seconds=2)
+        await eventually(lambda: not target.engine.keys and not target.engine.buttons, seconds=3.5)
         assert target.engine.connected and not target.engine.epoch
         assert ws.close_code is None and target.ws.close_code is None
         assert ("key", 65, False) in target.sink.events
@@ -239,4 +239,3 @@ async def test_malformed_controller_frame_closes_session_and_releases_holds(serv
         await read_until(ws, lambda _: False)
     await eventually(lambda: not target.engine.keys)
     assert not target.engine.epoch
-

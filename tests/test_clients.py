@@ -38,9 +38,11 @@ class FakeConsole:
         self.commands = asyncio.Queue()
 
 
-@pytest.mark.parametrize("propagation_delay", [0, .225, .350])
+@pytest.mark.parametrize("propagation_delay", [0, .350, .450])
 async def test_real_client_lifecycle_and_password_change(tmp_path, monkeypatch, capsys, propagation_delay):
     delay_tasks = []
+    stall_until = 0
+    drop_heartbeats = False
     if propagation_delay:
         put = Outbox.put
         channels = {}
@@ -48,7 +50,8 @@ async def test_real_client_lifecycle_and_password_change(tmp_path, monkeypatch, 
         async def propagate(outbox, channel):
             while True:
                 raw, due = await channel.get()
-                await asyncio.sleep(max(0, due - outbox.loop.time()))
+                while max(due, stall_until) > outbox.loop.time():
+                    await asyncio.sleep(max(due, stall_until) - outbox.loop.time())
                 put(outbox, raw)
 
         def schedule(outbox, raw):
@@ -58,6 +61,8 @@ async def test_real_client_lifecycle_and_password_change(tmp_path, monkeypatch, 
             channels[outbox].put_nowait((raw, outbox.loop.time() + propagation_delay))
 
         def delayed_put(outbox, raw):
+            if drop_heartbeats and isinstance(raw, bytes) and raw[0] == Op.HEARTBEAT:
+                return
             # Due times model propagation without charging another delay for
             # every packet. FIFO also preserves WSS ordering when coarse Windows
             # clock ticks give several packets identical deadlines (independent
@@ -92,16 +97,37 @@ async def test_real_client_lifecycle_and_password_change(tmp_path, monkeypatch, 
         client.capture.policy.mouse(Op.BUTTON, 1, 1)
         client.capture.policy.mouse(Op.MOVE, 6, -2)
         await eventually(lambda: target.engine.keys and target.engine.buttons)
-        if propagation_delay == .350:
-            # A 700 ms RTT plus the 200 ms challenge interval exceeds the old
-            # input cutoff, with 150 ms headroom for real scheduler jitter on
-            # the separate 850 ms heartbeat check. Exact boundaries use the
-            # deterministic clock in test_core.py.
-            deadline = asyncio.get_running_loop().time() + 6
+        if propagation_delay:
+            # Sustain a drag on 700/900 ms RTT routes. A short wire stall also
+            # creates an update gap beyond the old 650 ms controller cutoff.
+            started = asyncio.get_running_loop().time()
+            deadline = started + 10
+            stalled = False
             while asyncio.get_running_loop().time() < deadline:
                 assert client.epoch and target.engine.epoch
+                if propagation_delay == .450 and not stalled and asyncio.get_running_loop().time() - started > 2:
+                    stall_until = asyncio.get_running_loop().time() + .750
+                    stalled = True
                 client.capture.policy.mouse(Op.MOVE, 1, -1)
                 await asyncio.sleep(.03)
+            if propagation_delay == .450:
+                assert stalled
+                # Relay pings, challenges, probes and input still flow. Only
+                # application heartbeats stop; the target must release holds.
+                drop_heartbeats = True
+                await eventually(lambda: not target.engine.epoch, seconds=5)
+                await eventually(lambda: not client.capture.policy.active)
+                assert not target.engine.keys and not target.engine.buttons
+                assert client.connected and target.engine.connected
+                assert "controller heartbeat timed out" in capsys.readouterr().out
+                drop_heartbeats = False
+                client.capture.policy.key(65, False)
+                client.capture.policy.mouse(Op.BUTTON, 1, 0)
+                client.activate()
+                await eventually(lambda: client.capture.policy.active)
+                client.capture.policy.key(65, True)
+                client.capture.policy.mouse(Op.BUTTON, 1, 1)
+                await eventually(lambda: target.engine.keys and target.engine.buttons)
         client.capture.alive = False
         await eventually(lambda: not client.capture.policy.active)
         await eventually(lambda: not target.engine.keys and not target.engine.buttons)

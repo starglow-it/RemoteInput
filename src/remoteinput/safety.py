@@ -3,9 +3,10 @@ import secrets
 import threading
 import time
 
-from .config import CHALLENGE_INTERVAL, INPUT_TOKEN_SECONDS, LEASE_SECONDS
+from .config import CHALLENGE_INTERVAL, MAX_QUEUE_AGE, NETWORK_TIMEOUT_MAX
 from .protocol import Op, ack, control
 from .queueing import InputQueue
+from .timing import NetworkTiming
 
 
 class TargetEngine:
@@ -17,6 +18,8 @@ class TargetEngine:
         self.leases = {}
         self.last_challenge = -1e9
         self.last_heartbeat = 0
+        self.last_echo_issued = -1e9
+        self.network = NetworkTiming()
         self.epoch = 0
         self.last_epoch = 0
         self.seq = 0
@@ -64,7 +67,18 @@ class TargetEngine:
             self.connected = value
             self.leases.clear()
             self.last_challenge = -1e9
+            self.last_echo_issued = -1e9
+            self.network = NetworkTiming()
             self.reset("Paused" if value else "Disconnected")
+
+    def peer_changed(self):
+        with self.lock:
+            self.reset()
+            self.network = NetworkTiming()
+            self.last_echo_issued = -1e9
+            self.last_challenge = -1e9
+            # Keep still-valid issued challenges: one may already be in flight
+            # when the relay admits a controller. Their deadlines still apply.
 
     def receive(self, event):
         if event.op == Op.RESET:
@@ -73,8 +87,27 @@ class TargetEngine:
         if not self.queue.put(event):
             self.reset("Paused: input overload")
 
-    def valid_lease(self, nonce, now, limit=INPUT_TOKEN_SECONDS):
+    def valid_lease(self, nonce, now, limit):
         return nonce in self.leases and 0 <= now - self.leases[nonce] < limit
+
+    def heartbeat_expired(self, now):
+        gap, limit = now - self.last_heartbeat, self.network.timeout
+        if self.epoch and gap >= limit:
+            self.reset(f"Paused: controller heartbeat timed out (gap {gap * 1000:.0f} ms; "
+                       f"limit {limit * 1000:.0f} ms)")
+            return True
+        return False
+
+    def observe_heartbeat(self, event, now):
+        issued = self.leases[event.lease]
+        # Repeating a nonce with a new sequence must not extend a hold. RTT
+        # estimates also use each challenge only once, in increasing order.
+        if issued <= self.last_echo_issued:
+            return
+        self.last_echo_issued = issued
+        self.network.observe(now - issued)
+        if self.epoch:
+            self.last_heartbeat = now
 
     def reject_stale(self, event, now, limit):
         issued = self.leases.get(event.lease)
@@ -94,15 +127,14 @@ class TargetEngine:
             # Retain a small bounded history for numeric failure diagnostics;
             # valid_lease still enforces the shorter per-operation deadline.
             self.leases = {n: t for n, t in self.leases.items()
-                           if now - t < INPUT_TOKEN_SECONDS + LEASE_SECONDS}
+                           if now - t < NETWORK_TIMEOUT_MAX + CHALLENGE_INTERVAL + MAX_QUEUE_AGE + 1}
             if self.connected and now - self.last_challenge >= CHALLENGE_INTERVAL:
                 nonce = secrets.randbits(64) or 1
                 self.leases[nonce] = now
                 self.last_challenge = now
                 self.emit(control("challenge", nonce=nonce))
-            if self.epoch and now - self.last_heartbeat > LEASE_SECONDS:
-                self.reset("Paused: controller heartbeat timed out")
-            elif self.epoch and not self.injector.permitted():
+            self.heartbeat_expired(now)
+            if self.epoch and not self.injector.permitted():
                 self.reset("Paused: input permission lost")
             if not self.epoch and (self.keys or self.buttons):
                 self.reset("Paused: retrying input release")
@@ -120,12 +152,16 @@ class TargetEngine:
                 # A late paused-mode probe or an old/duplicate frame cannot
                 # invalidate a different activation. No input is injected here.
                 if event.op != Op.ACTIVATE:
-                    if event.op == Op.PROBE and event.epoch == 0:
+                    if event.op in (Op.HEARTBEAT, Op.PROBE) and event.epoch == 0:
                         if self.epoch:
                             return True
                     elif event.epoch != self.epoch or not self.epoch or event.seq <= self.seq:
                         return True
-                limit = LEASE_SECONDS if event.op == Op.HEARTBEAT else INPUT_TOKEN_SECONDS
+                limit = self.network.timeout if event.op == Op.HEARTBEAT else self.network.input_timeout
+                if event.op == Op.HEARTBEAT and not self.epoch:
+                    # Calibrate while paused, within the absolute bound. This
+                    # cannot activate control or keep any remote holds alive.
+                    limit = NETWORK_TIMEOUT_MAX
                 if not self.valid_lease(event.lease, now, limit):
                     self.reject_stale(event, now, limit)
                     return True
@@ -144,14 +180,16 @@ class TargetEngine:
                 if event.op == Op.PROBE and not self.epoch:
                     self.emit(ack(event, age * 1e6, 0))
                     return True
+                if event.op == Op.HEARTBEAT and not self.epoch:
+                    self.observe_heartbeat(event, now)
+                    return True
                 if event.epoch != self.epoch or not self.epoch or event.seq <= self.seq:
                     return True
                 self.seq = event.seq
-                if now - self.last_heartbeat > LEASE_SECONDS:
-                    self.reset("Paused: controller heartbeat timed out")
+                if self.heartbeat_expired(now):
                     return True
                 if event.op == Op.HEARTBEAT:
-                    self.last_heartbeat = now
+                    self.observe_heartbeat(event, now)
                     return True
                 start = time.perf_counter_ns()
                 if event.op == Op.KEY:
