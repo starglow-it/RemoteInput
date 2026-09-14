@@ -147,6 +147,16 @@ def test_verified_tls_and_small_uncompressed_buffers():
     assert options["max_size"] <= 2048
 
 
+def test_ca_bundle_and_no_tls_key_logging(tmp_path, monkeypatch):
+    from remoteinput.config import public_tls_context
+    path = tmp_path / "tls-secrets.log"
+    monkeypatch.setenv("SSLKEYLOGFILE", str(path))
+    context = public_tls_context()
+    assert context.cert_store_stats()["x509_ca"] > 0
+    assert context.keylog_filename is None
+    assert not path.exists()
+
+
 @pytest.fixture
 def engine():
     clock = [1.]
@@ -298,4 +308,3 @@ def test_native_windows_vault_round_trip_and_deletion(tmp_path, monkeypatch):
     assert DPAPI("test-only").read() == b"secret-value"
     vault.delete()
     assert vault.read() is None
-

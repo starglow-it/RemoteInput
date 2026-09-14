@@ -3,6 +3,8 @@ import os
 import ssl
 from urllib.parse import urlsplit
 
+import certifi
+
 try:
     from ._deployment import RELAY_URL
 except ImportError:
@@ -26,8 +28,18 @@ def relay_url(override=None):
     return url
 
 
+def public_tls_context():
+    # Frozen macOS Python cannot depend on a developer's external OpenSSL CA path.
+    # Construct explicitly so SSLKEYLOGFILE cannot turn on TLS secret logging.
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    context.minimum_version = ssl.TLSVersion.TLSv1_2
+    context.load_default_certs()
+    context.load_verify_locations(cafile=certifi.where())
+    return context
+
+
 def client_options(ssl_context=None):
-    return dict(ssl=ssl_context or ssl.create_default_context(), compression=None,
+    return dict(ssl=ssl_context or public_tls_context(), compression=None,
                 max_size=MAX_FRAME, max_queue=16, write_limit=4096,
                 open_timeout=10, close_timeout=1, ping_interval=10, ping_timeout=5, proxy=None)
 
@@ -39,4 +51,3 @@ def private_logging():
         logger.handlers[:] = [logging.NullHandler()]
         logger.propagate = False
         logger.setLevel(logging.CRITICAL)
-

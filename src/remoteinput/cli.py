@@ -7,7 +7,7 @@ import time
 from websockets.asyncio.client import connect
 
 from . import __version__
-from .config import RELAY_URL, client_options, private_logging, relay_url
+from .config import RELAY_URL, client_options, private_logging, public_tls_context, relay_url
 from .metrics import Metrics
 from .protocol import control, parse_control
 
@@ -33,6 +33,8 @@ async def probe(url, count):
 def self_check():
     from .protocol import FRAME, Event, Op, unpack
     assert unpack(Event(Op.MOVE, a=3, b=-4).pack()).b == -4
+    trusted = public_tls_context().cert_store_stats()["x509_ca"]
+    assert trusted > 0
     native = "not available on this platform"
     if sys.platform == "win32":
         import ctypes
@@ -43,6 +45,7 @@ def self_check():
         from .platforms.macos import MacInjector
         native = "CoreGraphics loaded; accessibility=" + str(MacInjector().permitted())
     return {"version": __version__, "platform": sys.platform, "input_frame_bytes": FRAME.size,
+            "trusted_certificate_authorities": trusted,
             "relay_embedded": bool(RELAY_URL), "native": native,
             "note": "Import/protocol check only; no real keys or mouse input were injected."}
 
@@ -109,4 +112,3 @@ def main():
         # Avoid tracebacks of networking/authentication internals, which could contain secrets.
         print("RemoteInput could not complete the operation. Check connectivity and OS permissions.", file=sys.stderr)
         raise SystemExit(1) from None
-

@@ -46,7 +46,7 @@ python -m pytest -q
 python scripts/build.py --relay-url wss://YOUR-ACTUAL-DOMAIN/ws
 ```
 
-PyInstaller bundles the Python runtime and websocket dependency. Windows packages contain `.cmd` launchers and an `.exe`; macOS packages contain executable `.command` launchers and a native binary. Keep the entire extracted folder together. Native builds must be made on the destination OS/architecture; the Linux diagnostic build is not a Windows/macOS executable. [PyInstaller documents this platform dependency](https://pyinstaller.org/en/stable/operating-mode.html).
+PyInstaller bundles the Python runtime, websocket dependency and certifi CA bundle. This lets macOS validate public relay certificates without a developer Python installation or its OpenSSL trust files. Windows packages contain `.cmd` launchers and an `.exe`; macOS packages contain executable `.command` launchers and a native binary. Keep the entire extracted folder together. Native builds must be made on the destination OS/architecture; the Linux diagnostic build is not a Windows/macOS executable. [PyInstaller documents this platform dependency](https://pyinstaller.org/en/stable/operating-mode.html).
 
 The build runs a packaged self-check and writes `BUILD-INFO.json`, a setup guide, and a SHA-256 checksum. The self-check imports the relevant native APIs and validates the protocol; it does not prove interactive desktop operation.
 
@@ -59,4 +59,3 @@ Developer certificates were not supplied. Initial packages are unsigned Windows 
 - Run the manual acceptance checks in TESTING.md on clean machines after signing and before distributing the package. Upload verified packages as release assets through your normal release process.
 
 This repository does not install a startup service or add unattended launch persistence. TLS protects each PC-to-relay connection; the relay is trusted and can see input in transit. It is not an end-to-end encrypted relay-blind design.
-

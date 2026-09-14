@@ -45,7 +45,8 @@ def main():
                      "Measure Relay": "probe"}
         for title, mode in launchers.items():
             if sys.platform == "win32":
-                (folder / (title + ".cmd")).write_text('@echo off\r\n"%~dp0RemoteInput.exe" ' + mode + '\r\npause\r\n')
+                (folder / (title + ".cmd")).write_bytes(
+                    ('@echo off\r\n"%~dp0RemoteInput.exe" ' + mode + '\r\npause\r\n').encode("utf-8"))
             else:
                 path = folder / (title + ".command")
                 path.write_text('#!/bin/sh\ncd -- "$(dirname -- "$0")" || exit 1\n./RemoteInput ' + mode +
@@ -78,4 +79,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
