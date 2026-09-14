@@ -21,7 +21,7 @@ The probe reports when the TLS certificate and WebSocket upgrade succeed, then w
 | TLS certificate verification failed | Check hostname, expiry, full certificate chain, and the PC clock. The default Caddy deployment uses a public DNS hostname; a bare IP gets a locally issued certificate that clients do not trust. |
 | TLS negotiation failed | Read Caddy's certificate logs; confirm that it was started with the same hostname used by the client. |
 | HTTP 502, 503, or 504 | The proxy rejected the upgrade. Check that the Python relay is running and reachable at `relay:8765` inside the Compose network. |
-| HTTP 404 | Check Caddy's hostname and the `/ws` route. |
+| HTTP 404 | Update and recreate Caddy as described below; early versions had a fallback that intercepted `/ws`. Also check the hostname. |
 | HTTP 401 or 403 | Check proxy access rules; the diagnostic connection does not need a target password. |
 | Rate limiting | Wait a minute before retrying. Avoid repeatedly starting probes in parallel. |
 | Diagnostic reply or ping failure after the upgrade succeeds | Check the Python relay's status/logs and any proxy connection timeouts. |
@@ -43,6 +43,19 @@ docker compose -f deploy/compose.yaml up -d --build
 ```
 
 This retains the existing registry volume. Do not remove the registry volume to fix a connection problem.
+
+### Fix HTTP 404 from the initial Caddy configuration
+
+The initial Caddyfile placed a catch-all `respond 404` beside `reverse_proxy`. Caddy sorts `respond` before `reverse_proxy`, so `/ws` was rejected before reaching Python. The corrected configuration uses mutually exclusive `handle` blocks for `/ws`, `/health`, and the fallback. [Caddy documents this directive ordering](https://caddyserver.com/docs/caddyfile/directives#directive-order).
+
+From the server's repository root, with `RELAY_DOMAIN` set to the hostname used by the client:
+
+```sh
+git pull --ff-only
+docker compose -f deploy/compose.yaml up -d --build --force-recreate
+```
+
+Recreation loads the updated bind-mounted Caddyfile and preserves the named registry/certificate volumes. A plain `up -d` does not reliably apply changes to the contents of a bind-mounted configuration file. Rerun the Windows probe after updating the server; updating only the Windows checkout cannot repair the server route.
 
 The hostname's A/AAAA records must point to the server. Ports 80 and 443 must be available to Caddy and reachable through the hosting firewall for the default certificate setup. Read certificate failures in Caddy's logs; do not disable certificate verification or expose the private relay port 8765.
 

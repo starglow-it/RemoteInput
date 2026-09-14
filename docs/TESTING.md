@@ -48,3 +48,4 @@ The build workflow targets Windows x64, Intel macOS and Apple Silicon macOS. Suc
 
 Code signing, notarization, clean-machine installation, physical hook suppression/cursor anchoring, macOS TCC/Keychain approval dialogs, non-US layouts/IME, secure desktops, real US-to-China routes and the separate screen feed are not validated in the Linux development environment. The relay Docker deployment also requires a real host/domain for end-to-end deployment verification.
 
+The `relay-deployment` CI job builds and starts the actual Compose services in an isolated project, using Caddy's local CA for `localhost`. It verifies the certificate, `/health` HTTP 200, an unknown route HTTP 404, and the real `/ws` diagnostic exchange and ping/pong. It does not disable TLS verification. Public DNS, ACME issuance, and the user's server firewall still need checking on the deployed host.

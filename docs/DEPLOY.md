@@ -40,7 +40,7 @@ Run **one relay process/replica** using the `registry` volume. It holds the AUTO
 
 For a consistent backup, stop the relay briefly and snapshot/copy its whole volume, including SQLite WAL/SHM files if present; then start it again. Restore the entire backup to the same relay hostname. A stale database restore can roll back password revocations and allocations: after a disaster restore, rotate all target passwords before allowing use. Losing both database and backups prevents identity recovery; there is deliberately no unauthenticated reclaim API.
 
-Upgrade by pulling the reviewed source and rerunning `docker compose ... up -d --build`; the volume remains. Caddy restart/config changes can close WSS sessions; clients reconnect paused.
+Upgrade by pulling the reviewed source and rerunning `docker compose ... up -d --build`; the volume remains. When the Caddyfile changes, use `docker compose -f deploy/compose.yaml up -d --build --force-recreate` to load the new bind-mounted configuration. Caddy restart/config changes can close WSS sessions; clients reconnect paused.
 
 ## Embed the address and build
 
